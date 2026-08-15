@@ -26,6 +26,7 @@ const PAGES: PageEntry[] = [
   { file: 'chat/page.tsx', load: () => import('@/app/chat/page') },
   { file: 'comms/page.tsx', load: () => import('@/app/comms/page') },
   { file: 'social/page.tsx', load: () => import('@/app/social/page') },
+  { file: 'social/automation/page.tsx', load: () => import('@/app/social/automation/page') },
   { file: 'social/[platform]/page.tsx', load: () => import('@/app/social/[platform]/page'), props: { params: { platform: 'instagram' } } },
   { file: 'social/beehiiv/page.tsx', load: () => import('@/app/social/beehiiv/page') },
   { file: 'content/page.tsx', load: () => import('@/app/content/page') },

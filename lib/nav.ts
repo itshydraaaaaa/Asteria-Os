@@ -33,6 +33,7 @@ export const NAV_OPERATE: NavItem[] = [
   { href: '/funnel', label: 'Funnel', icon: Filter },
   { href: '/workflows', label: 'Workflows', icon: Workflow },
   { href: '/social', label: 'Social', icon: Share2 },
+  { href: '/social/automation', label: 'Social Automation', icon: Sparkles },
   { href: '/content', label: 'Content', icon: Clapperboard },
   { href: '/finances', label: 'Finances', icon: Wallet },
 ];
