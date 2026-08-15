@@ -29,6 +29,9 @@ export const KEY_SLOTS: KeySlot[] = [
   { envVar: 'WHOP_API_KEY', label: 'Whop API key', group: 'Payments' },
   { envVar: 'NOTION_API_KEY', label: 'Notion integration secret', group: 'Notion' },
   { envVar: 'MANYCHAT_API_KEY', label: 'ManyChat API key', group: 'Social', hint: 'ManyChat → Settings → API (Instagram DM automation)' },
+  { envVar: 'AI_GATEWAY_API_KEY', label: 'AI Gateway API key', group: 'AI Models (LLM)', hint: 'Vercel AI Gateway key' },
+  { envVar: 'OPENAI_API_KEY', label: 'OpenAI API key', group: 'AI Models (LLM)', hint: 'sk-proj-...' },
+  { envVar: 'ANTHROPIC_API_KEY', label: 'Anthropic API key', group: 'AI Models (LLM)', hint: 'sk-ant-...' },
   { envVar: 'GBRAIN_STORE', label: 'Brain-store path override', group: 'G-Brain' },
 ];
 
