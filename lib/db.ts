@@ -153,7 +153,6 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   summary TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id);
-CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
 CREATE TABLE IF NOT EXISTS agent_messages (
   id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,
@@ -374,6 +373,7 @@ function migrateAgentRunsTable(db: InstanceType<typeof Database>): void {
     if (!columns.has('tokens_used')) db.exec('ALTER TABLE agent_runs ADD COLUMN tokens_used INTEGER');
     if (!columns.has('cost_usd')) db.exec('ALTER TABLE agent_runs ADD COLUMN cost_usd REAL');
   }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status)');
 }
 
 type AgentRow = {
