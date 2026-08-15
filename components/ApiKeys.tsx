@@ -55,16 +55,84 @@ export function ApiKeys() {
     load();
   };
 
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+
+  const handleBulkSave = async () => {
+    if (!bulkText.trim()) return;
+    setError(null);
+    setBulkMsg(null);
+    const res = await fetch('/api/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bulkText }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setBulkMsg(`✓ Saved ${data.count} keys to .env.local!`);
+      setBulkText('');
+      setTimeout(() => {
+        setBulkOpen(false);
+        setBulkMsg(null);
+      }, 2000);
+      load();
+    } else {
+      setError(data.error || 'Bulk save failed');
+    }
+  };
+
   return (
     <section className="mt-10">
-      <div className="mb-1 flex items-center gap-2">
-        <KeyRound className="h-4 w-4 text-os-muted" />
-        <h2 className="text-sm font-bold uppercase tracking-widest text-os-muted">API keys</h2>
+      <div className="mb-1 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-os-muted" />
+          <h2 className="text-sm font-bold uppercase tracking-widest text-os-muted">API Keys & MCP Credentials</h2>
+        </div>
+        <button
+          onClick={() => setBulkOpen(!bulkOpen)}
+          className="flex items-center gap-1.5 rounded bg-os-accent px-3 py-1 text-xs font-semibold text-black hover:opacity-90 transition-all shadow"
+        >
+          <span>⚡ Configure All at Once (.env / mcp.json)</span>
+        </button>
       </div>
       <p className="mb-4 text-xs text-os-dim">
-        Stored in <code>.env.local</code> (gitignored), applied live. Values shown masked — the OS never
-        echoes a secret back.
+        Stored in <code>.env.local</code> (gitignored), applied live immediately. Paste individual keys below or configure all at once.
       </p>
+
+      {bulkOpen && (
+        <div className="mb-6 rounded-xl border border-os-accent/40 bg-os-surface p-4 space-y-3 shadow-lg">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-os-accent uppercase tracking-wider">⚡ Bulk Paste .env File or MCP Config</h3>
+            <button onClick={() => setBulkOpen(false)} className="text-xs text-os-dim hover:text-os-text">
+              Close
+            </button>
+          </div>
+          <p className="text-[11.5px] text-os-dim">
+            Paste your complete <code>.env</code> file content (e.g. <code>STRIPE_SECRET_KEY=sk_...</code>) or full <code>mcp.json</code> content. Asteria OS parses and writes all keys into <code>.env.local</code> simultaneously!
+          </p>
+          <textarea
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+            rows={6}
+            placeholder={`STRIPE_SECRET_KEY=sk_live_...\nATTIO_API_KEY=attio_...\nZERNI0_API_KEY=...\nSLACK_BOT_TOKEN=xoxb-...`}
+            className="w-full rounded border border-os-border bg-os-bg p-3 font-mono text-xs text-os-text focus:border-os-accent focus:outline-none"
+          />
+          {bulkMsg && <p className="font-mono text-xs text-os-ok">{bulkMsg}</p>}
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setBulkOpen(false)} className="px-3 py-1 text-xs text-os-muted">
+              Cancel
+            </button>
+            <button
+              onClick={handleBulkSave}
+              className="rounded bg-os-accent px-4 py-1.5 text-xs font-bold text-black hover:opacity-90"
+            >
+              Save All Keys to .env.local
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && <p className="mb-3 font-mono text-[11px] text-os-muted">✗ {error}</p>}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
