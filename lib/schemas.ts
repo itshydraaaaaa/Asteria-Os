@@ -364,7 +364,7 @@ export const SocialDmMessageSchema = z.object({
   source: z.string().min(1),
 });
 
-export const SocialPostStatusSchema = z.enum(['queued', 'published', 'failed']);
+export const SocialPostStatusSchema = z.enum(['queued', 'published', 'failed', 'draft']);
 
 // A post composed on the Social tab and queued for the Zernio-publishing agent.
 export const SocialPostSchema = z.object({

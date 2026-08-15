@@ -1579,6 +1579,7 @@ const skills: Omit<Skill, 'markdown'>[] = [
   { id: 'skill-retrieval', name: 'Knowledge retrieval', category: 'Ops', description: 'Hybrid search over G-Brain so every agent shares one memory.', ownerAgentId: 'conductor', status: 'live', tools: ['gbrain'], order: 9 },
   { id: 'skill-reconcile', name: 'Payment reconciliation', category: 'Ops', description: 'Matches processor payouts to clients across Stripe and FanBasis.', ownerAgentId: null, status: 'planned', tools: ['stripe', 'fanbasis'], order: 10 },
   { id: 'skill-attribution', name: 'Revenue attribution', category: 'Ops', description: 'Ties content and calls to closed revenue via Trakyo.', ownerAgentId: null, status: 'planned', tools: ['trakyo', 'ghl'], order: 11 },
+  { id: 'trend-research', name: 'Trend research & content intelligence', category: 'Content', description: 'Read-only trend research & web content intelligence powered by Agent Reach.', ownerAgentId: 'social-agent', status: 'live', tools: ['agent-reach', 'gbrain'], order: 12 },
 ];
 
 export function seedDatabase(db: FounderDb): void {

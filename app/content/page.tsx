@@ -4,6 +4,7 @@ import { getDb } from '@/lib/data';
 import { contentAgents } from '@/lib/content';
 import { zernioRecentPosts, zernioPostDays } from '@/lib/connectors/zernio';
 import { PageHeader } from '@/components/PageHeader';
+import { ContentAssistantTrigger } from '@/components/content/ContentAssistantTrigger';
 import { Badge, Dot, SectionHead } from '@/components/terminal';
 import type { Agent } from '@/lib/schemas';
 
@@ -106,10 +107,16 @@ export default async function ContentPage() {
 
   return (
     <div>
+
       <PageHeader
         eyebrow="content engine"
         title="Content Creation"
-        right={<Badge tone="accent">{crew.length} agents</Badge>}
+        right={
+          <div className="flex items-center gap-2">
+            <ContentAssistantTrigger />
+            <Badge tone="accent">{crew.length} agents</Badge>
+          </div>
+        }
       />
 
       {/* Backlinks to the Vantage content-intelligence system */}

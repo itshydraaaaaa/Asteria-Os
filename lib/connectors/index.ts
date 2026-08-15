@@ -18,6 +18,7 @@ import { webinarjamStatus } from '@/lib/connectors/webinarjam';
 import { trakyoStatus } from '@/lib/connectors/trakyo';
 import { metaAdsStatus } from '@/lib/connectors/meta-ads';
 import { ghlStatus } from '@/lib/connectors/ghl';
+import { agentReachStatus } from '@/lib/connectors/agent-reach';
 import { getBrainProvider } from '@/lib/brain';
 import { resolveManychatKey, runtimeEnv } from '@/lib/creds';
 import type { ConnectorStatus } from '@/lib/connectors/types';
@@ -35,6 +36,7 @@ async function brainConnectorStatus(): Promise<ConnectorStatus> {
 }
 
 const CHECKS: [string, ConnectorStatus['kind'], () => Promise<ConnectorStatus>][] = [
+  ['agent-reach', 'knowledge', agentReachStatus],
   ['gbrain', 'brain', brainConnectorStatus],
   ['llm', 'orchestration', llmStatus],
   ['whatsapp', 'social', whatsappStatus],
