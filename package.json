@@ -1,8 +1,9 @@
 {
-  "name": "founder-os",
+  "name": "asteria-os",
   "version": "1.0.0",
   "private": true,
-  "description": "FOUNDER OS — personal operating system and AI agent command center",
+  "license": "MIT",
+  "description": "ASTERIA OS — Freelance Operating System & AI Agent Command Center",
   "scripts": {
     "dev": "next dev -p 4100",
     "build": "next build",

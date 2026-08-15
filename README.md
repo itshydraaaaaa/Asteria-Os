@@ -1,20 +1,8 @@
-# Founder OS
+# Asteria OS
 
-**A personal operating system for a one-person business: a live web command
-center that runs your company as a set of AI-assisted "departments."**
+**A freelance operating system and AI agent command center for Asteria Freelance Business.**
 
-Founder OS turns the tabs, tools, and mental overhead of running a solo business
-into one screen: unified comms, a client funnel, social growth, finances, a
-knowledge graph, and a roster of named AI agents that each own a real job.
-
-This repository is the **open-source demo build**. It ships seeded with
-realistic placeholder data, so every page is alive out of the box with no
-accounts, no API keys, and nothing to configure. It's the same system taught,
-live, in the [Founder OS cohort](https://www.thefounderos.com); this repo lets
-you explore and run it yourself.
-
-> Want to build your own, live, with guidance? That's what the cohort is for.
-> [thefounderos.com](https://www.thefounderos.com)
+Asteria OS unifies your agency operations into one screen: unified client comms, sales lead funnel, social growth, project tasks, finances, and a dedicated AI agent command center (`/chat`).
 
 ---
 
