@@ -10,7 +10,11 @@ import { chatWithAgent, type ChatResult } from '@/lib/agents/chat';
 import type { FounderDb } from '@/lib/db';
 import type { RuntimeAgent } from '@/lib/agents/runtime';
 
-export type ConductorResult = ChatResult & { routedTo: string };
+export type ConductorResult = ChatResult & {
+  routedTo: string;
+  confidence: number;
+  suggestedOptions?: string[];
+};
 
 const AT_PREFIX = /^@(\S+)\s*/;
 
@@ -24,7 +28,7 @@ function matchAgent(agents: RuntimeAgent[], token: string): RuntimeAgent | undef
 }
 
 /** Ask the model for the single best-fit agent id; fall back to the first agent. */
-async function pickAgent(routable: RuntimeAgent[], message: string): Promise<string> {
+async function pickAgent(routable: RuntimeAgent[], message: string): Promise<{ id: string; confidence: number }> {
   const roster = routable.map((a) => `- ${a.id}: ${a.name} — ${a.description}`).join('\n');
   const system = [
     'You are the Conductor, the router for Founder OS operator agents.',
@@ -35,7 +39,12 @@ async function pickAgent(routable: RuntimeAgent[], message: string): Promise<str
   const res = await llmChat({ system, messages: [{ role: 'user', content: message }] });
   const picked = (res.text.trim().split(/\s+/)[0] ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
   const found = routable.find((a) => a.id === picked);
-  return (found ?? routable[0]).id;
+
+  // Short or ambiguous prompts have low confidence
+  const isAmbiguous = message.trim().length < 15 || /^(do it|check|stuff|help|run|go)$/i.test(message.trim());
+  const confidence = found ? (isAmbiguous ? 0.45 : 0.95) : 0.30;
+
+  return { id: (found ?? routable[0]).id, confidence };
 }
 
 export async function routeConductorMessage(
@@ -47,6 +56,7 @@ export async function routeConductorMessage(
   const routable = agents.filter((a) => a.id !== 'conductor');
   let targetId: string | undefined;
   let delivered = message;
+  let confidence = 1.0;
 
   const at = message.match(AT_PREFIX);
   if (at) {
@@ -54,12 +64,18 @@ export async function routeConductorMessage(
     if (explicit) {
       targetId = explicit.id;
       delivered = message.replace(AT_PREFIX, '').trim() || message;
+      confidence = 1.0;
     }
-    // unknown @name → fall through to model routing (never throw)
   }
 
-  if (!targetId) targetId = await pickAgent(routable, message);
+  if (!targetId) {
+    const pick = await pickAgent(routable, message);
+    targetId = pick.id;
+    confidence = pick.confidence;
+  }
 
+  const suggestedOptions = confidence < 0.70 ? ['sales-agent', 'sdr-agent', 'finance-agent', 'dev-copilot'] : undefined;
   const result = await chatWithAgent(db, agents, targetId, delivered, opts);
-  return { routedTo: targetId, ...result };
+
+  return { routedTo: targetId, confidence, suggestedOptions, ...result };
 }

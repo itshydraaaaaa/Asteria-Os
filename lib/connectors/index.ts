@@ -69,17 +69,21 @@ const CHECKS: [string, ConnectorStatus['kind'], () => Promise<ConnectorStatus>][
 ];
 
 export async function allConnectorStatuses(): Promise<ConnectorStatus[]> {
+  const now = new Date().toISOString();
   return Promise.all(
     CHECKS.map(([id, kind, check]) =>
-      check().catch(
-        (err): ConnectorStatus => ({
-          id,
-          name: id,
-          kind,
-          state: 'error',
-          detail: err instanceof Error ? err.message : String(err),
-        }),
-      ),
+      check()
+        .then((s) => ({ ...s, lastSyncedAt: s.lastSyncedAt || now }))
+        .catch(
+          (err): ConnectorStatus => ({
+            id,
+            name: id,
+            kind,
+            state: 'error',
+            detail: err instanceof Error ? err.message : String(err),
+            lastSyncedAt: now,
+          }),
+        ),
     ),
   );
 }

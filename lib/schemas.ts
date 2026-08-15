@@ -125,13 +125,21 @@ export const PersonaSchema = z.object({
   signaturePlay: z.string().min(1),
 });
 
+export const AgentRunStatusSchema = z.enum(['running', 'success', 'error']);
+
 export const AgentRunSchema = z.object({
   id: z.string().min(1),
   agentId: z.string().min(1),
+  status: AgentRunStatusSchema.default('success'),
+  input: z.string().nullable().optional(),
+  output: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
+  tokensUsed: z.number().int().nonnegative().nullable().optional(),
+  costUsd: z.number().nonnegative().nullable().optional(),
   startedAt: z.string().min(1),
-  finishedAt: z.string().min(1),
+  finishedAt: z.string().default(''),
   ok: z.boolean(),
-  summary: z.string(),
+  summary: z.string().default(''),
 });
 
 export const BroadcastReplySchema = z.object({

@@ -4,7 +4,7 @@ import path from 'node:path';
 
 // Every component must be imported somewhere — no dead files. If a component is
 // intentionally kept unused (rare), add its basename here with a reason.
-const KNOWN_ORPHANS: string[] = ['OsMark'];
+const KNOWN_ORPHANS: string[] = ['OsMark', 'AsteriaSpinner'];
 
 const ROOT = process.cwd();
 

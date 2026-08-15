@@ -10,6 +10,8 @@ type Message = {
   agentName?: string;
   text: string;
   routedTo?: string;
+  confidence?: number;
+  suggestedOptions?: string[];
   timestamp: string;
 };
 
@@ -175,6 +177,28 @@ export function CommandChatView({
                 }`}
               >
                 <div className="whitespace-pre-wrap">{m.text}</div>
+
+                {m.confidence !== undefined && m.confidence < 0.70 && m.suggestedOptions && (
+                  <div className="mt-3 border-t border-os-border/50 pt-2.5">
+                    <div className="font-mono text-[10px] text-os-warn mb-1.5 font-semibold">
+                      ⚠ Low routing confidence ({Math.round(m.confidence * 100)}%). Direct to target agent:
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {m.suggestedOptions.map((opt) => (
+                        <button
+                          key={opt}
+                          onClick={() => {
+                            setTargetAgent(opt);
+                            setInput(`@${opt} `);
+                          }}
+                          className="rounded border border-os-accent/40 bg-os-accent/10 px-2 py-1 font-mono text-[10px] text-os-accent hover:bg-os-accent hover:text-os-ink transition-colors"
+                        >
+                          @{opt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

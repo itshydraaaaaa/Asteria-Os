@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
+import { appEvents } from '@/lib/events';
 import { isValidCron } from '@/lib/cron';
 import {
   AgentCronSchema,
@@ -139,11 +141,19 @@ CREATE TABLE IF NOT EXISTS phases (
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'success' CHECK (status IN ('running','success','error')),
+  input TEXT,
+  output TEXT,
+  error TEXT,
+  tokens_used INTEGER,
+  cost_usd REAL,
   started_at TEXT NOT NULL,
-  finished_at TEXT NOT NULL,
+  finished_at TEXT,
   ok INTEGER NOT NULL,
   summary TEXT NOT NULL DEFAULT ''
 );
+CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
 CREATE TABLE IF NOT EXISTS agent_messages (
   id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,
@@ -302,6 +312,22 @@ CREATE TABLE IF NOT EXISTS skills (
   markdown TEXT NOT NULL DEFAULT '',
   ord INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS operators (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'operator',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  operator_id TEXT,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT,
+  created_at TEXT NOT NULL,
+  metadata TEXT NOT NULL DEFAULT '{}'
+);
 `;
 
 /** Databases created before the hierarchy build lack these columns. */
@@ -335,6 +361,18 @@ function migrateSkillsTable(db: InstanceType<typeof Database>): void {
   if (columns.size > 0 && !columns.has('markdown')) {
     db.exec("ALTER TABLE skills ADD COLUMN markdown TEXT NOT NULL DEFAULT ''");
     db.exec('DELETE FROM skills');
+  }
+}
+
+function migrateAgentRunsTable(db: InstanceType<typeof Database>): void {
+  const columns = new Set((db.pragma('table_info(agent_runs)') as { name: string }[]).map((c) => c.name));
+  if (columns.size > 0) {
+    if (!columns.has('status')) db.exec("ALTER TABLE agent_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'success'");
+    if (!columns.has('input')) db.exec('ALTER TABLE agent_runs ADD COLUMN input TEXT');
+    if (!columns.has('output')) db.exec('ALTER TABLE agent_runs ADD COLUMN output TEXT');
+    if (!columns.has('error')) db.exec('ALTER TABLE agent_runs ADD COLUMN error TEXT');
+    if (!columns.has('tokens_used')) db.exec('ALTER TABLE agent_runs ADD COLUMN tokens_used INTEGER');
+    if (!columns.has('cost_usd')) db.exec('ALTER TABLE agent_runs ADD COLUMN cost_usd REAL');
   }
 }
 
@@ -375,6 +413,7 @@ export function openDb(path: string) {
   migrateAgentsTable(db);
   migrateFunnelContactsTable(db);
   migrateSkillsTable(db);
+  migrateAgentRunsTable(db);
 
   const departments = {
     all(): Department[] {
@@ -556,10 +595,16 @@ export function openDb(path: string) {
     AgentRunSchema.parse({
       id: r.id,
       agentId: r.agent_id,
+      status: r.status || (r.ok ? 'success' : 'error'),
+      input: r.input ?? null,
+      output: r.output ?? null,
+      error: r.error ?? null,
+      tokensUsed: r.tokens_used ?? null,
+      costUsd: r.cost_usd ?? null,
       startedAt: r.started_at,
-      finishedAt: r.finished_at,
+      finishedAt: r.finished_at ?? null,
       ok: Boolean(r.ok),
-      summary: r.summary,
+      summary: r.summary || '',
     });
 
   const agentRuns = {
@@ -575,10 +620,47 @@ export function openDb(path: string) {
         .all(limit)
         .map(rowToRun);
     },
+    getAgentRuns(agentId?: string, limit = 50): AgentRun[] {
+      return agentId ? this.byAgent(agentId).slice(0, limit) : this.recent(limit);
+    },
     insert(run: AgentRun): void {
+      const parsed = AgentRunSchema.parse(run);
       db.prepare(
-        'INSERT OR REPLACE INTO agent_runs (id, agent_id, started_at, finished_at, ok, summary) VALUES (?, ?, ?, ?, ?, ?)',
-      ).run(run.id, run.agentId, run.startedAt, run.finishedAt, run.ok ? 1 : 0, run.summary);
+        `INSERT OR REPLACE INTO agent_runs 
+           (id, agent_id, status, input, output, error, tokens_used, cost_usd, started_at, finished_at, ok, summary) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        parsed.id,
+        parsed.agentId,
+        parsed.status || 'success',
+        parsed.input ?? null,
+        parsed.output ?? null,
+        parsed.error ?? null,
+        parsed.tokensUsed ?? null,
+        parsed.costUsd ?? null,
+        parsed.startedAt,
+        parsed.finishedAt ?? null,
+        parsed.ok ? 1 : 0,
+        parsed.summary || '',
+      );
+      appEvents.publish('agent_run_update', parsed);
+    },
+    updateStatus(id: string, updates: { status: 'success' | 'error'; output?: string; error?: string; finishedAt?: string; ok?: boolean; summary?: string }): void {
+      const existing = db.prepare('SELECT * FROM agent_runs WHERE id = ?').get(id) as any;
+      if (!existing) return;
+      const ok = updates.ok !== undefined ? updates.ok : updates.status === 'success';
+      db.prepare(
+        `UPDATE agent_runs SET status = ?, output = ?, error = ?, finished_at = ?, ok = ?, summary = ? WHERE id = ?`,
+      ).run(
+        updates.status,
+        updates.output ?? existing.output,
+        updates.error ?? existing.error,
+        updates.finishedAt || new Date().toISOString(),
+        ok ? 1 : 0,
+        updates.summary || existing.summary,
+        id,
+      );
+      appEvents.publish('agent_run_update', { id, ...updates });
     },
   };
 
@@ -663,6 +745,7 @@ export function openDb(path: string) {
       db.prepare(
         'INSERT OR REPLACE INTO agent_tasks (id, agent_id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
       ).run(t.id, t.agentId, t.title, t.status, t.createdAt, t.updatedAt);
+      appEvents.publish('task_status_change', t);
     },
     byAgent(agentId: string): AgentTask[] {
       return db
@@ -676,6 +759,7 @@ export function openDb(path: string) {
     setStatus(id: string, status: AgentTask['status'], updatedAt: string): void {
       AgentTaskSchema.shape.status.parse(status);
       db.prepare('UPDATE agent_tasks SET status = ?, updated_at = ? WHERE id = ?').run(status, updatedAt, id);
+      appEvents.publish('task_status_change', { id, status, updatedAt });
     },
     remove(id: string): void {
       db.prepare('DELETE FROM agent_tasks WHERE id = ?').run(id);
@@ -1069,6 +1153,28 @@ export function openDb(path: string) {
     },
   };
 
+  const auditLog = {
+    insert(entry: { id?: string; operatorId?: string; action: string; targetType: string; targetId?: string; metadata?: Record<string, unknown> }): void {
+      const id = entry.id || randomUUID();
+      const createdAt = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO audit_log (id, operator_id, action, target_type, target_id, created_at, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        id,
+        entry.operatorId || null,
+        entry.action,
+        entry.targetType,
+        entry.targetId || null,
+        createdAt,
+        JSON.stringify(entry.metadata || {}),
+      );
+    },
+    recent(limit = 100) {
+      return db.prepare('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?').all(limit);
+    },
+  };
+
   return {
     departments,
     agents,
@@ -1092,6 +1198,7 @@ export function openDb(path: string) {
     sopTasks,
     workflows,
     skills,
+    auditLog,
     close: () => db.close(),
   };
 }

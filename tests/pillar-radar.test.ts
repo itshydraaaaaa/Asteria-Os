@@ -19,7 +19,7 @@ const task = (id: string, departmentId: string): SopTask => ({
   assigneeKind: 'agent', assigneeId: id,
 });
 const run = (agentId: string, minutesAgo: number): AgentRun => ({
-  id: `r-${agentId}`, agentId, startedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+  id: `r-${agentId}`, agentId, status: 'success', startedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
   finishedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(), ok: true, summary: 'ok',
 });
 

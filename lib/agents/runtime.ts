@@ -36,23 +36,43 @@ export function createRuntime(db: FounderDb, agents: RuntimeAgent[]) {
     async run(id: string): Promise<AgentRun> {
       const agent = registry.get(id);
       if (!agent) throw new Error(`unknown agent: ${id}`);
+      const runId = randomUUID();
       const startedAt = new Date().toISOString();
+
+      // Persist running state first
+      const initialRun: AgentRun = {
+        id: runId,
+        agentId: id,
+        status: 'running',
+        startedAt,
+        finishedAt: '',
+        ok: true,
+        summary: 'Agent execution in progress...',
+      };
+      db.agentRuns.insert(initialRun);
+
       let result: AgentRunResult;
       try {
         result = await agent.run();
       } catch (err) {
         result = { ok: false, summary: err instanceof Error ? err.message : String(err) };
       }
-      const run: AgentRun = {
-        id: randomUUID(),
+
+      const finishedAt = new Date().toISOString();
+      const finalStatus = result.ok ? 'success' : 'error';
+      const finalRun: AgentRun = {
+        id: runId,
         agentId: id,
+        status: finalStatus,
+        output: JSON.stringify(result.data ?? null),
+        error: result.ok ? null : result.summary,
         startedAt,
-        finishedAt: new Date().toISOString(),
+        finishedAt,
         ok: result.ok,
         summary: result.summary,
       };
-      db.agentRuns.insert(run);
-      return run;
+      db.agentRuns.insert(finalRun);
+      return finalRun;
     },
 
     /** Speak to every agent at once; each replies in parallel. */

@@ -21,5 +21,6 @@ export type ConnectorStatus = {
   kind: ConnectorKind;
   state: ConnectorState;
   detail: string;
+  lastSyncedAt?: string;
   meta?: Record<string, string | number>;
 };

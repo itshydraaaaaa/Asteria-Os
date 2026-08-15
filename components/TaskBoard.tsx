@@ -32,7 +32,35 @@ export function TaskBoard({
   const pending = useRef(0);
 
   useEffect(() => {
-    const id = setInterval(async () => {
+    let eventSource: EventSource | null = null;
+    let fallbackPoll: NodeJS.Timeout | null = null;
+
+    const startStream = () => {
+      try {
+        eventSource = new EventSource('/api/stream');
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'task_status_change' || data.type === 'agent_run_update') {
+              fetchLatestTasks();
+            }
+          } catch {
+            /* ignore non-JSON pings */
+          }
+        };
+        eventSource.onerror = () => {
+          if (eventSource) eventSource.close();
+          // Fallback to polling on stream drop
+          if (!fallbackPoll) {
+            fallbackPoll = setInterval(fetchLatestTasks, 10000);
+          }
+        };
+      } catch {
+        fallbackPoll = setInterval(fetchLatestTasks, 6000);
+      }
+    };
+
+    const fetchLatestTasks = async () => {
       if (pending.current > 0) return;
       try {
         const res = await fetch('/api/agents/work');
@@ -40,10 +68,16 @@ export function TaskBoard({
         const body = (await res.json()) as { tasks?: AgentTask[] };
         if (Array.isArray(body.tasks)) setTasks(body.tasks);
       } catch {
-        /* keep the last good board */
+        /* keep last board */
       }
-    }, 6000);
-    return () => clearInterval(id);
+    };
+
+    startStream();
+
+    return () => {
+      if (eventSource) eventSource.close();
+      if (fallbackPoll) clearInterval(fallbackPoll);
+    };
   }, []);
 
   const handleCreateTask = async (e: React.FormEvent) => {

@@ -43,6 +43,7 @@ const ROUTES: RouteEntry[] = [
   { route: 'social/posts', load: () => import('@/app/api/social/posts/route'), url: 'http://localhost/api/social/posts' },
   { route: 'social/series', load: () => import('@/app/api/social/series/route'), url: 'http://localhost/api/social/series?metric=audience' },
   { route: 'social/sync', load: () => import('@/app/api/social/sync/route'), url: 'http://localhost/api/social/sync' },
+  { route: 'stream', load: () => import('@/app/api/stream/route'), url: 'http://localhost/api/stream' },
   { route: 'tools', load: () => import('@/app/api/tools/route'), url: 'http://localhost/api/tools' },
   { route: 'ventures', load: () => import('@/app/api/ventures/route'), url: 'http://localhost/api/ventures' },
   { route: 'webhooks/manychat', load: () => import('@/app/api/webhooks/manychat/route'), url: 'http://localhost/api/webhooks/manychat' },
@@ -62,11 +63,18 @@ function discoverGetRoutes(dir: string, base = ''): string[] {
 }
 
 describe('platform smoke — every GET API route answers 200 with JSON', () => {
-  test.each(ROUTES)('GET /api/$route', async ({ load, url, params }) => {
+  test.each(ROUTES)('GET /api/$route', async ({ route, load, url, params }) => {
     const mod = await load();
     expect(mod.GET, 'route should export GET').toBeTypeOf('function');
-    const res = (await mod.GET!(new Request(url), { params })) as Response;
+    const controller = new AbortController();
+    const req = new Request(url, { signal: controller.signal });
+    const res = (await mod.GET!(req, { params })) as Response;
     expect(res.status, `GET ${url} should be 200 (honest state, not 500/400)`).toBe(200);
+    if (route === 'stream') {
+      expect(res.headers.get('Content-Type')).toContain('text/event-stream');
+      controller.abort();
+      return;
+    }
     const body = await res.json();
     expect(body && typeof body === 'object').toBe(true);
   }, 20_000);

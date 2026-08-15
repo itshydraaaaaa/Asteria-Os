@@ -146,3 +146,9 @@ export function sumChargeIncome(
   }
   return { amountCents, currency, count };
 }
+
+/** Redact raw account numbers in UI views to last 4 digits */
+export function redactAccountNumber(text: string): string {
+  if (!text) return text;
+  return text.replace(/\b\d{4,16}\b/g, (match) => '••••' + match.slice(-4));
+}
