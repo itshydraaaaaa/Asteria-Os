@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Instagram, Linkedin, Mail, Music2, Twitter, Youtube, type LucideIcon } from 'lucide-react';
+import { Instagram, Linkedin, Mail, Music2, Twitter, Youtube, Sparkles, type LucideIcon } from 'lucide-react';
 import { getDb } from '@/lib/data';
 import {
   audienceGrowth,
@@ -116,7 +116,18 @@ export default async function SocialPage() {
       <PageHeader
         eyebrow="audience"
         title="Social"
-        right={<Badge tone="ok">● zernio live</Badge>}
+        right={
+          <div className="flex items-center gap-2">
+            <Link
+              href="/social/automation"
+              className="flex items-center gap-1.5 rounded-md bg-os-accent px-3 py-1.5 text-xs font-semibold text-black hover:opacity-90 transition-all shadow-md"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Social Automation Studio →</span>
+            </Link>
+            <Badge tone="ok">● zernio live</Badge>
+          </div>
+        }
       />
 
       {/* Every account on the first screen — compact row, one cell per channel.
