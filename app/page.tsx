@@ -207,6 +207,73 @@ export default async function HomePage() {
         ))}
       </div>
 
+      {/* Quick Launcher Deck */}
+      <section className="mb-[22px] grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        <Link
+          href="/chat"
+          className="group relative overflow-hidden rounded-xl border border-os-accent/30 bg-os-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-os-accent hover:shadow-[0_0_20px_rgba(6,182,212,0.15)]"
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-os-accent">
+              Command Deck
+            </span>
+            <ArrowUpRight className="h-4 w-4 text-os-dim transition-colors group-hover:text-os-accent" />
+          </div>
+          <h3 className="mt-2 text-sm font-bold text-os-text">Conductor Chat</h3>
+          <p className="mt-1 text-[11.5px] text-os-dim leading-relaxed">
+            Delegate multi-agent tasks & command the workforce.
+          </p>
+        </Link>
+
+        <Link
+          href="/social/automation"
+          className="group relative overflow-hidden rounded-xl border border-os-accent/30 bg-os-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-os-accent hover:shadow-[0_0_20px_rgba(6,182,212,0.15)]"
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-os-accent">
+              Content Engine
+            </span>
+            <ArrowUpRight className="h-4 w-4 text-os-dim transition-colors group-hover:text-os-accent" />
+          </div>
+          <h3 className="mt-2 text-sm font-bold text-os-text">Social AI Studio</h3>
+          <p className="mt-1 text-[11.5px] text-os-dim leading-relaxed">
+            Agent Reach trend research & automated draft pipeline.
+          </p>
+        </Link>
+
+        <Link
+          href="/tasks"
+          className="group relative overflow-hidden rounded-xl border border-os-border bg-os-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-os-text hover:shadow-lg"
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-os-ok">
+              Workforce
+            </span>
+            <ArrowUpRight className="h-4 w-4 text-os-dim transition-colors group-hover:text-os-text" />
+          </div>
+          <h3 className="mt-2 text-sm font-bold text-os-text">Task Kanban</h3>
+          <p className="mt-1 text-[11.5px] text-os-dim leading-relaxed">
+            Real-time SSE event updates & background work orders.
+          </p>
+        </Link>
+
+        <Link
+          href="/funnel"
+          className="group relative overflow-hidden rounded-xl border border-os-border bg-os-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-os-text hover:shadow-lg"
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-os-warn">
+              Revenue
+            </span>
+            <ArrowUpRight className="h-4 w-4 text-os-dim transition-colors group-hover:text-os-text" />
+          </div>
+          <h3 className="mt-2 text-sm font-bold text-os-text">Client Lead Funnel</h3>
+          <p className="mt-1 text-[11.5px] text-os-dim leading-relaxed">
+            5-stage deal journey, decay engine & dossier profiles.
+          </p>
+        </Link>
+      </section>
+
       {/* Pulse row */}
       <section className="mb-[18px] grid grid-cols-4 gap-3 max-[1100px]:grid-cols-2">
         <StatTile
