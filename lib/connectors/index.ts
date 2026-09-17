@@ -19,6 +19,8 @@ import { trakyoStatus } from '@/lib/connectors/trakyo';
 import { metaAdsStatus } from '@/lib/connectors/meta-ads';
 import { ghlStatus } from '@/lib/connectors/ghl';
 import { agentReachStatus } from '@/lib/connectors/agent-reach';
+import { zapierStatus } from '@/lib/connectors/zapier';
+import { runwayStatus } from '@/lib/connectors/runway';
 import { getBrainProvider } from '@/lib/brain';
 import { resolveManychatKey, runtimeEnv } from '@/lib/creds';
 import type { ConnectorStatus } from '@/lib/connectors/types';
@@ -36,6 +38,7 @@ async function brainConnectorStatus(): Promise<ConnectorStatus> {
 }
 
 const CHECKS: [string, ConnectorStatus['kind'], () => Promise<ConnectorStatus>][] = [
+  ['zapier', 'orchestration', () => zapierStatus(runtimeEnv())],
   ['agent-reach', 'knowledge', agentReachStatus],
   ['gbrain', 'brain', brainConnectorStatus],
   ['llm', 'orchestration', llmStatus],
@@ -59,6 +62,7 @@ const CHECKS: [string, ConnectorStatus['kind'], () => Promise<ConnectorStatus>][
   ['meta-ads', 'ads', metaAdsStatus],
   ['ghl', 'crm', ghlStatus],
   ['arcads', 'creative', arcadsStatus],
+  ['runway', 'creative', runwayStatus],
   ['wispr', 'local', wisprStatus],
   ['local-stack', 'local', localStackStatus],
   ['obsidian', 'knowledge', obsidianStatus],

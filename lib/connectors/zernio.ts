@@ -44,6 +44,7 @@ function pickFollowers(account: unknown): number | undefined {
     md?.profileData?.followersCount,
     md?.userProfile?.followersCount,
     a?.profileData?.followersCount,
+    a?.followersCount,
     pages[0]?.fan_count,
   ];
   for (const c of candidates) {
@@ -65,7 +66,7 @@ export function parseLiveAccounts(raw: unknown): FollowerMap {
     if (!platform) continue;
     const followers = pickFollowers(a);
     if (followers == null) continue;
-    const username = typeof a.username === 'string' ? a.username : undefined;
+    const username = typeof a.username === 'string' ? a.username : typeof a.displayName === 'string' ? a.displayName : undefined;
     out[platform] = { handle: username ? `@${username}` : undefined, followers };
   }
   return out;
@@ -230,13 +231,20 @@ export async function zernioStatus(): Promise<ConnectorStatus> {
       signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const raw = await res.json();
+    const liveAccounts = Array.isArray(raw?.accounts) ? raw.accounts : [];
+    const handles = liveAccounts
+      .map((a: any) => (a.username ? `@${a.username}` : a.displayName ? `@${a.displayName}` : null))
+      .filter(Boolean)
+      .join(', ');
+    const totalFollowers = liveAccounts.reduce((sum: number, a: any) => sum + (pickFollowers(a) ?? 0), 0);
     return {
       id: 'zernio',
       name: 'Zernio (Social)',
       kind: 'social',
       state: 'connected',
-      detail: `${accounts.length} platforms (@founderos.ai) · ${followers.toLocaleString('en-US')} total followers`,
-      meta: { platforms: accounts.length, followers },
+      detail: `${liveAccounts.length} live channels (${handles || 'Connected'}) · ${totalFollowers.toLocaleString('en-US')} total followers`,
+      meta: { platforms: liveAccounts.length, followers: totalFollowers, handles },
     };
   } catch (err) {
     return {
@@ -247,5 +255,90 @@ export async function zernioStatus(): Promise<ConnectorStatus> {
       detail: `Key found but API check failed: ${err instanceof Error ? err.message : String(err)}`,
       meta: { platforms: accounts.length },
     };
+  }
+}
+
+/**
+ * Publish or schedule a post to connected social channels via Zernio API.
+ * Spec reference: llms-full.txt (POST /v1/posts)
+ */
+export async function zernioPublishPost(post: {
+  content: string;
+  mediaUrl?: string | null;
+  platforms?: string[];
+  scheduledFor?: string | null;
+}): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const key = zernioKey();
+  if (!key) return { ok: false, error: 'ZERNIO_API_KEY is not configured' };
+  const config = readConfig();
+  const endpoint = `${config.v1Url ?? 'https://zernio.com/api/v1'}/posts`;
+
+  try {
+    // Fetch live account IDs from Zernio to map platform string names to accountId
+    let accountMap: Record<string, string> = {};
+    try {
+      const accRes = await fetch(`${config.v1Url ?? 'https://zernio.com/api/v1'}/accounts`, {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (accRes.ok) {
+        const accJson = await accRes.json();
+        if (Array.isArray(accJson?.accounts)) {
+          for (const a of accJson.accounts) {
+            if (a.platform && a._id) {
+              accountMap[a.platform.toLowerCase()] = a._id;
+            }
+          }
+        }
+      }
+    } catch {
+      // Fallback map if /v1/accounts is unreachable
+    }
+
+    const requestedPlatforms = post.platforms ?? ['instagram', 'tiktok'];
+    const formattedPlatforms = requestedPlatforms.map((p) => {
+      const platName = typeof p === 'string' ? p.toLowerCase() : (p as any).platform?.toLowerCase();
+      const accountId = typeof p === 'object' && (p as any).accountId ? (p as any).accountId : accountMap[platName];
+      return {
+        platform: platName,
+        accountId: accountId || undefined,
+      };
+    }).filter((p) => p.accountId);
+
+    // If no specific accountId was found for the requested platform, pass all available connected accounts
+    const finalPlatforms = formattedPlatforms.length > 0
+      ? formattedPlatforms
+      : Object.entries(accountMap).map(([plat, id]) => ({ platform: plat, accountId: id }));
+
+    const mediaUrl = post.mediaUrl || 'https://placeholdervideo.dev/720x1280';
+    const isVideo = mediaUrl.includes('.mp4') || mediaUrl.includes('video') || mediaUrl.includes('cloudfront') || mediaUrl.includes('placeholdervideo');
+    const mediaItems = [{ url: mediaUrl, type: isVideo ? 'video' : 'image' }];
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: post.content,
+        mediaItems,
+        mediaUrl,
+        postType: isVideo ? 'reel' : 'post',
+        platforms: finalPlatforms,
+        scheduledFor: post.scheduledFor ?? undefined,
+        publishNow: !post.scheduledFor,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      return { ok: false, error: `Zernio API error (${res.status}): ${err}` };
+    }
+
+    const data = await res.json();
+    return { ok: true, id: data?._id ?? data?.id ?? data?.post?._id };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

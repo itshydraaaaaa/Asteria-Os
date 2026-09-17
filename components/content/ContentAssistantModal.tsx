@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Sparkles, X, Compass, Calendar, FileText, Repeat, ExternalLink, CheckCircle } from 'lucide-react';
+import { Sparkles, X, Compass, Calendar, FileText, Repeat, ExternalLink, CheckCircle, Clapperboard } from 'lucide-react';
 import type { AgentReachSearchResult } from '@/lib/connectors/agent-reach';
+import type { ReelPackage } from '@/app/api/social/generate/route';
+import { ReelReviewStation } from '@/components/social/ReelReviewStation';
 
 export function ContentAssistantModal({
   isOpen,
@@ -13,13 +15,14 @@ export function ContentAssistantModal({
   onClose: () => void;
   onGenerated?: () => void;
 }) {
-  const [mode, setMode] = useState<'TREND_SCAN' | 'CALENDAR' | 'CAPTION_BATCH' | 'REPURPOSE'>('TREND_SCAN');
-  const [topic, setTopic] = useState('AI Automation & Agentic Workflows');
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['web', 'youtube', 'twitter', 'linkedin']);
+  const [mode, setMode] = useState<'REELS' | 'TREND_SCAN' | 'CALENDAR' | 'CAPTION_BATCH' | 'REPURPOSE'>('REELS');
+  const [topic, setTopic] = useState('Why Autonomous AI Workflows Beat Retainers in 2026');
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['instagram', 'tiktok', 'youtube', 'twitter', 'linkedin']);
   const [loading, setLoading] = useState(false);
   const [resultDigest, setResultDigest] = useState('');
   const [sources, setSources] = useState<AgentReachSearchResult[]>([]);
   const [draftsCount, setDraftsCount] = useState<number | null>(null);
+  const [reelPackage, setReelPackage] = useState<ReelPackage | null>(null);
 
   if (!isOpen) return null;
 
@@ -32,6 +35,7 @@ export function ContentAssistantModal({
     setResultDigest('');
     setSources([]);
     setDraftsCount(null);
+    setReelPackage(null);
     try {
       const res = await fetch('/api/social/generate', {
         method: 'POST',
@@ -43,6 +47,9 @@ export function ContentAssistantModal({
         setResultDigest(data.digest || '');
         setSources(data.sources || []);
         setDraftsCount(data.drafts?.length || 0);
+        if (data.reelPackage) {
+          setReelPackage(data.reelPackage);
+        }
         if (onGenerated) onGenerated();
       }
     } catch {
@@ -53,8 +60,8 @@ export function ContentAssistantModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-os-border bg-os-surface p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl border border-os-border bg-os-surface p-6 shadow-2xl space-y-5 my-auto">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-os-border pb-4">
           <div className="flex items-center gap-2.5">
@@ -62,8 +69,8 @@ export function ContentAssistantModal({
               <Sparkles className="h-4 w-4" />
             </div>
             <div>
-              <h3 className="font-semibold text-os-text">Content Assistant</h3>
-              <p className="text-[11px] text-os-dim">Agent Reach Research & Content Generation Pipeline</p>
+              <h3 className="font-semibold text-os-text">Content Assistant & Reels Studio</h3>
+              <p className="text-[11px] text-os-dim">Multi-Agent Scriptwriting & Viral Reviewer Pipeline</p>
             </div>
           </div>
           <button onClick={onClose} className="rounded p-1 text-os-dim hover:text-os-text">
@@ -72,12 +79,13 @@ export function ContentAssistantModal({
         </div>
 
         {/* Mode Selector */}
-        <div className="mt-4 grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {[
-            { id: 'TREND_SCAN', label: 'Trend Scan', icon: Compass },
-            { id: 'CALENDAR', label: 'Calendar', icon: Calendar },
-            { id: 'CAPTION_BATCH', label: 'Caption Batch', icon: FileText },
-            { id: 'REPURPOSE', label: 'Repurpose', icon: Repeat },
+            { id: 'REELS', label: '1. Reels & Shorts', icon: Clapperboard },
+            { id: 'TREND_SCAN', label: '2. Trend Scan', icon: Compass },
+            { id: 'CAPTION_BATCH', label: '3. Captions', icon: FileText },
+            { id: 'CALENDAR', label: '4. Calendar', icon: Calendar },
+            { id: 'REPURPOSE', label: '5. Repurpose', icon: Repeat },
           ].map((m) => {
             const Icon = m.icon;
             const active = mode === m.id;
@@ -85,24 +93,24 @@ export function ContentAssistantModal({
               <button
                 key={m.id}
                 onClick={() => setMode(m.id as any)}
-                className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs transition-all ${
+                className={`flex flex-col items-center gap-1.5 rounded-lg border p-2.5 text-xs transition-all ${
                   active
-                    ? 'border-os-accent bg-os-accent/10 text-os-accent font-medium'
+                    ? 'border-os-accent bg-os-accent/15 text-os-accent font-medium ring-1 ring-os-accent/50'
                     : 'border-os-border bg-os-surface2 text-os-muted hover:border-os-text'
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                <span>{m.label}</span>
+                <span className="text-[11px] font-semibold">{m.label}</span>
               </button>
             );
           })}
         </div>
 
         {/* Inputs */}
-        <div className="mt-5 space-y-4">
+        <div className="space-y-4">
           <div>
             <label className="block text-[11px] font-mono uppercase tracking-wider text-os-dim mb-1">
-              Topic / Focus Area
+              Topic / Video Core Concept
             </label>
             <input
               type="text"
@@ -115,16 +123,16 @@ export function ContentAssistantModal({
 
           <div>
             <label className="block text-[11px] font-mono uppercase tracking-wider text-os-dim mb-1.5">
-              Research Channels (Agent Reach)
+              Target Distribution Channels
             </label>
             <div className="flex flex-wrap gap-2">
-              {['web', 'youtube', 'rss', 'github', 'twitter', 'linkedin'].map((p) => (
+              {['instagram', 'tiktok', 'youtube', 'twitter', 'linkedin', 'web'].map((p) => (
                 <button
                   key={p}
                   onClick={() => togglePlatform(p)}
                   className={`rounded-full px-3 py-1 text-[11px] font-mono border transition-all ${
                     selectedPlatforms.includes(p)
-                      ? 'border-os-accent bg-os-accent/20 text-os-accent'
+                      ? 'border-os-accent bg-os-accent/20 text-os-accent font-semibold'
                       : 'border-os-border bg-os-surface2 text-os-dim hover:text-os-text'
                   }`}
                 >
@@ -135,9 +143,30 @@ export function ContentAssistantModal({
           </div>
         </div>
 
-        {/* Result Area */}
-        {resultDigest && (
-          <div className="mt-5 rounded-lg border border-os-accent/30 bg-os-accent/5 p-4 space-y-3">
+        {/* Action Button */}
+        <div className="flex items-center justify-between border-t border-os-border pt-4">
+          <button onClick={onClose} className="rounded-md px-3 py-1.5 text-xs text-os-muted hover:text-os-text">
+            Close
+          </button>
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-md bg-os-accent px-5 py-2 text-xs font-bold text-black hover:opacity-90 disabled:opacity-50 transition-all shadow-md"
+          >
+            <Sparkles className="h-4 w-4" />
+            <span>{loading ? 'Scriptwriter & Reviewer Running...' : 'Generate 9:16 Reel Package'}</span>
+          </button>
+        </div>
+
+        {/* Output Area */}
+        {reelPackage && (
+          <div className="pt-2">
+            <ReelReviewStation reel={reelPackage} onApprove={onClose} />
+          </div>
+        )}
+
+        {!reelPackage && resultDigest && (
+          <div className="rounded-lg border border-os-accent/30 bg-os-accent/5 p-4 space-y-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-os-accent">
               <CheckCircle className="h-4 w-4" />
               <span>Generation Output</span>
@@ -150,46 +179,8 @@ export function ContentAssistantModal({
             <pre className="text-[11.5px] font-mono text-os-text whitespace-pre-wrap max-h-40 overflow-y-auto">
               {resultDigest}
             </pre>
-
-            {sources.length > 0 && (
-              <div className="pt-2 border-t border-os-accent/20">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-os-dim">Source Intelligence</span>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {sources.slice(0, 3).map((s, i) => (
-                    <a
-                      key={i}
-                      href={s.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[10.5px] text-os-accent hover:underline"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      <span>{s.title.slice(0, 30)}...</span>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
-
-        {/* Actions */}
-        <div className="mt-6 flex items-center justify-between border-t border-os-border pt-4">
-          <span className="text-[10.5px] text-os-dim">Drafts land in queue with status: DRAFT for human approval.</span>
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="rounded-md px-3 py-1.5 text-xs text-os-muted hover:text-os-text">
-              Close
-            </button>
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="flex items-center gap-1.5 rounded-md bg-os-accent px-4 py-1.5 text-xs font-semibold text-black hover:opacity-90 disabled:opacity-50"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>{loading ? 'Scanning & Generating...' : 'Run Generation'}</span>
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

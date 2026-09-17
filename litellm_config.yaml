@@ -1,0 +1,37 @@
+# LiteLLM Proxy — multi-provider fallback for GBrain / Founder OS
+# Docs: https://docs.litellm.ai/docs/proxy/configs
+#
+# All providers are grouped under the unified model name "gbrain-llm".
+# LiteLLM routes requests to the primary provider and cascades on
+# 429 / 5xx / timeout / error: Google AI Studio -> OpenRouter (free tier).
+
+model_list:
+  # ── Primary: Google AI Studio ────────────────────────────────────────
+  - model_name: gbrain-llm
+    litellm_params:
+      model: gemini/gemini-3.6-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  # ── Secondary fallback: Groq (uncomment when GROQ_API_KEY is set) ────
+  # - model_name: gbrain-llm
+  #   litellm_params:
+  #     model: groq/llama-3.3-70b-versatile
+  #     api_key: os.environ/GROQ_API_KEY
+
+  # ── Tertiary fallback: OpenRouter (free tier) ────────────────────────
+  - model_name: gbrain-llm
+    litellm_params:
+      model: openrouter/auto
+      api_key: os.environ/OPENROUTER_API_KEY
+
+litellm_settings:
+  num_retries: 2
+  request_timeout: 30
+  fallbacks:
+    - gbrain-llm: [gbrain-llm]
+  allowed_fails: 3
+  cache: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  health_check_interval: 60

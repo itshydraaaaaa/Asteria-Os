@@ -980,6 +980,12 @@ export function openDb(path: string) {
         .all()
         .map((r) => rowToPost(r as Parameters<typeof rowToPost>[0]));
     },
+    updateStatus(id: string, status: SocialPost['status']): void {
+      db.prepare('UPDATE social_posts SET status = ? WHERE id = ?').run(status, id);
+    },
+    delete(id: string): void {
+      db.prepare('DELETE FROM social_posts WHERE id = ?').run(id);
+    },
   };
 
   const people = {

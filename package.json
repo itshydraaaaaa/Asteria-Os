@@ -16,7 +16,9 @@
     "brain:docs": "tsx scripts/generate-brain-docs.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.43",
     "@notionhq/client": "^5.22.0",
+    "@runwayml/sdk": "^4.15.0",
     "@slack/web-api": "^7.16.0",
     "@types/d3-force": "^3.0.10",
     "ai": "^6.0.208",

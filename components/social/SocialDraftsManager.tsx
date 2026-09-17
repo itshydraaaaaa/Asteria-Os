@@ -28,8 +28,17 @@ export function SocialDraftsManager({ initialDrafts }: { initialDrafts: SocialPo
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     setDrafts((prev) => prev.filter((d) => d.id !== id));
+    try {
+      await fetch('/api/social/posts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+    } catch {
+      // ignore
+    }
   };
 
   if (drafts.length === 0) {
@@ -65,7 +74,7 @@ export function SocialDraftsManager({ initialDrafts }: { initialDrafts: SocialPo
           <div className="flex items-center justify-between border-t border-os-border pt-3">
             <div className="flex items-center gap-1 text-[10px] text-os-dim font-mono">
               <Clock className="h-3 w-3" />
-              <span>{d.scheduledFor ? new Date(d.scheduledFor).toLocaleDateString() : 'Scheduled'}</span>
+              <span suppressHydrationWarning>{d.scheduledFor ? d.scheduledFor.slice(0, 10) : 'Scheduled'}</span>
             </div>
 
             <div className="flex items-center gap-2">

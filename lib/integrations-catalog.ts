@@ -80,9 +80,9 @@ export const INTEGRATIONS: Integration[] = [
   { slug: 'obsidian', name: 'Notes', tagline: 'Markdown vault', category: 'Storage', connectorId: 'obsidian', envKeys: [] },
 
   // AI & Automation
-  { slug: 'openai', name: 'OpenAI', tagline: 'GPT models & embeddings', category: 'AI & Automation' },
+  { slug: 'openai', name: 'OpenAI / LiteLLM', tagline: 'Multi-model LLM routing', category: 'AI & Automation', connectorId: 'llm', popular: true, envKeys: ['OPENAI_API_KEY', 'GEMINI_API_KEY'] },
   { slug: 'anthropic', name: 'Anthropic', tagline: 'Claude models', category: 'AI & Automation', popular: true },
-  { slug: 'zapier', name: 'Zapier', tagline: 'Automate anything', category: 'AI & Automation' },
+  { slug: 'zapier', name: 'Zapier', tagline: 'AI Actions & 6,000+ Apps', category: 'AI & Automation', connectorId: 'zapier', popular: true, envKeys: ['ZAPIER_TOKEN', 'ZAPIER_MCP_URL'] },
   { slug: 'make', name: 'Make', tagline: 'Visual workflows', category: 'AI & Automation' },
   { slug: 'n8n', name: 'n8n', tagline: 'Self-hosted automation', category: 'AI & Automation' },
 
@@ -93,6 +93,7 @@ export const INTEGRATIONS: Integration[] = [
   { slug: 'loom', name: 'Loom', tagline: 'Screen recordings', category: 'Creative' },
   { slug: 'typeform', name: 'Typeform', tagline: 'Forms & surveys', category: 'Creative' },
   { slug: 'arcads', name: 'Arcads', tagline: 'AI video ads', category: 'Creative', connectorId: 'arcads', envKeys: ['ARCADS_BASIC_AUTH'] },
+  { slug: 'runway', name: 'RunwayML', tagline: 'Gen-4.5 9:16 AI video', category: 'Creative', connectorId: 'runway', envKeys: ['RUNWAYML_API_SECRET'] },
 ];
 
 export type CatalogEntry = Integration & { connected: boolean; keySaved: boolean };

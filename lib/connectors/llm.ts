@@ -1,11 +1,17 @@
 /**
- * LLM connector — backs agent & Conductor chat through the Vercel AI Gateway.
+ * LLM connector -- backs agent & Conductor chat through the Vercel AI Gateway
+ * or a local LiteLLM proxy (multi-provider fallback).
  *
  * Mirrors the brain.ts provider shape: a real `gateway` provider (default) that
  * calls the AI SDK with a `"provider/model"` string, plus a `stub` provider
- * (LLM_PROVIDER=stub) that is deterministic and makes NO network call — so the
+ * (LLM_PROVIDER=stub) that is deterministic and makes NO network call -- so the
  * whole agent-chat stack is testable offline. Status stays honest: no
- * AI_GATEWAY_API_KEY ⇒ not_configured, never a fake "connected".
+ * AI_GATEWAY_API_KEY => not_configured, never a fake "connected".
+ *
+ * LLM_PROVIDER=litellm routes through a local LiteLLM proxy on LITELLM_BASE_URL
+ * (default http://localhost:8000/v1) using @ai-sdk/openai with a custom baseURL.
+ * LiteLLM handles the multi-provider cascade (Google -> Groq -> OpenRouter)
+ * transparent to this layer.
  */
 import { z } from 'zod';
 import { CRED_FILES, resolveCred } from '@/lib/creds';
@@ -39,6 +45,11 @@ export interface LlmProvider {
 
 const GATEWAY_KEY = 'AI_GATEWAY_API_KEY';
 const DEFAULT_MODEL = process.env.LLM_MODEL ?? 'anthropic/claude-sonnet-5';
+
+/** LiteLLM defaults -- the unified model name from litellm_config.yaml. */
+const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL ?? 'http://localhost:8000/v1';
+const LITELLM_MODEL = process.env.LITELLM_MODEL ?? 'gbrain-llm';
+const LITELLM_KEY = 'LITELLM_API_KEY'; // master key if set, or "not-needed"
 
 /** process.env first (Next auto-loads .env.local), then Alex's cred files. */
 function resolveGatewayKey(): string | undefined {
@@ -75,12 +86,12 @@ export function createGatewayProvider(model: string = DEFAULT_MODEL): LlmProvide
   return {
     name: 'gateway',
     async chat(req) {
-      // Fail fast with an honest message instead of letting the SDK hang —
+      // Fail fast with an honest message instead of letting the SDK hang --
       // and hydrate process.env from Alex's cred files so a key that
       // exists outside .env.local still works.
       const key = resolveGatewayKey();
       if (!key) {
-        throw new Error('AI_GATEWAY_API_KEY is not set — add it to .env.local to enable agent chat.');
+        throw new Error('AI_GATEWAY_API_KEY is not set -- add it to .env.local to enable agent chat.');
       }
       if (!process.env.AI_GATEWAY_API_KEY) process.env.AI_GATEWAY_API_KEY = key;
       const { generateText, tool, stepCountIs, gateway } = await import('ai');
@@ -107,7 +118,7 @@ export function createGatewayProvider(model: string = DEFAULT_MODEL): LlmProvide
         const calls = step.toolCalls ?? [];
         const results = step.toolResults ?? [];
         for (const c of calls) {
-          // Match the result to its call by id — a failed/missing tool result
+          // Match the result to its call by id -- a failed/missing tool result
           // can leave `toolResults` shorter than `toolCalls`, so positional
           // alignment would attach the wrong output to every later call.
           const hit = results.find((r) => r.toolCallId === c.toolCallId);
@@ -119,9 +130,100 @@ export function createGatewayProvider(model: string = DEFAULT_MODEL): LlmProvide
   };
 }
 
+/**
+ * LiteLLM provider -- routes through a local LiteLLM proxy that handles
+ * multi-provider fallback (Google AI Studio -> Groq -> OpenRouter).
+ * Uses @ai-sdk/openai with a custom baseURL since LiteLLM exposes an OpenAI-compatible API.
+ */
+export function createLiteLlmProvider(model: string = LITELLM_MODEL): LlmProvider {
+  return {
+    name: 'litellm',
+    async chat(req) {
+      const apiKey = process.env[LITELLM_KEY] || process.env.LITELLM_MASTER_KEY || 'not-needed';
+      const endpoint = `${LITELLM_BASE_URL.replace(/\/+$/, '')}/chat/completions`;
+
+      const messages: { role: string; content: string }[] = [];
+      if (req.system) {
+        messages.push({ role: 'system', content: req.system });
+      }
+      for (const m of req.messages) {
+        if (m.role !== 'tool') {
+          messages.push({ role: m.role, content: m.content });
+        }
+      }
+
+      const tools = req.tools?.length
+        ? req.tools.map((t) => ({
+            type: 'function',
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: (t.parameters as { _def?: unknown }) ? {} : {},
+            },
+          }))
+        : undefined;
+
+      const body: Record<string, unknown> = {
+        model: req.model ?? model,
+        messages,
+      };
+      if (tools) body.tools = tools;
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '');
+        throw new Error(`LiteLLM request failed (${res.status}): ${errorText}`);
+      }
+
+      const data = (await res.json()) as {
+        choices?: Array<{
+          message?: {
+            content?: string;
+            tool_calls?: Array<{
+              id: string;
+              function: { name: string; arguments: string };
+            }>;
+          };
+        }>;
+      };
+
+      const choice = data.choices?.[0]?.message;
+      const text = choice?.content ?? '';
+      const toolCalls: LlmToolCall[] = [];
+
+      if (choice?.tool_calls && req.tools) {
+        for (const tc of choice.tool_calls) {
+          const spec = req.tools.find((t) => t.name === tc.function.name);
+          if (spec) {
+            let args: Record<string, unknown> = {};
+            try {
+              args = JSON.parse(tc.function.arguments);
+            } catch {
+              args = {};
+            }
+            const result = await spec.execute(args);
+            toolCalls.push({ name: spec.name, args, result });
+          }
+        }
+      }
+
+      return { text, toolCalls };
+    },
+  };
+}
+
 export function getLlmProvider(): LlmProvider {
   const name = process.env.LLM_PROVIDER ?? 'gateway';
   if (name === 'stub') return stubLlmProvider;
+  if (name === 'litellm') return createLiteLlmProvider();
   return createGatewayProvider();
 }
 
@@ -133,6 +235,14 @@ export async function llmStatus(): Promise<ConnectorStatus> {
   const base = { id: 'llm', name: 'LLM (Gateway)', kind: 'orchestration' } as const;
   if (process.env.LLM_PROVIDER === 'stub') {
     return { ...base, state: 'connected', detail: 'stub provider active (tests)' };
+  }
+  if (process.env.LLM_PROVIDER === 'litellm') {
+    return {
+      ...base,
+      name: 'LLM (LiteLLM)',
+      state: 'connected',
+      detail: `LiteLLM proxy at ${LITELLM_BASE_URL} · model ${LITELLM_MODEL} · fallback: Google -> Groq -> OpenRouter`,
+    };
   }
   const key = resolveGatewayKey();
   if (!key) {
