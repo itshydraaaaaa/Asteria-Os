@@ -14,6 +14,8 @@ import { pillarRadarAxes } from '@/lib/pillar-radar';
 import { BrainGraphView } from '@/components/BrainGraphView';
 import { BrainDump } from '@/components/BrainDump';
 import { Dot, SectionHead } from '@/components/terminal';
+import { auditBrainArchitecture } from '@/lib/brain-evolution';
+import { BrainEvolutionStudio } from '@/components/brain/BrainEvolutionStudio';
 
 export const dynamic = 'force-dynamic';
 
@@ -190,6 +192,8 @@ export default async function BrainPage() {
     },
   ];
 
+  const evolutionReport = await auditBrainArchitecture();
+
   return (
     <div>
       {/* capture rides the header's right slot: one untitled slot — type,
@@ -214,6 +218,11 @@ export default async function BrainPage() {
           clients={await clientRoster(db)}
           runsByAgent={runsByAgent}
         />
+      </section>
+
+      {/* Live Brain Evolution, Architecture Auditor & Step Progress Station */}
+      <section className="mt-6">
+        <BrainEvolutionStudio initialReport={evolutionReport} />
       </section>
 
       {/* G-Brain knowledge core: the PILLAR SPIDER CHART on the LEFT, the
