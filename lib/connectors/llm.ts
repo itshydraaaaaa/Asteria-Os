@@ -169,53 +169,58 @@ export function createLiteLlmProvider(model: string = LITELLM_MODEL): LlmProvide
       };
       if (tools) body.tools = tools;
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      });
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(4000),
+        });
 
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => '');
-        throw new Error(`LiteLLM request failed (${res.status}): ${errorText}`);
-      }
+        if (!res.ok) {
+          return createOmniRouterProvider().chat(req);
+        }
 
-      const data = (await res.json()) as {
-        choices?: Array<{
-          message?: {
-            content?: string;
-            tool_calls?: Array<{
-              id: string;
-              function: { name: string; arguments: string };
-            }>;
-          };
-        }>;
-      };
+        const data = (await res.json()) as {
+          choices?: Array<{
+            message?: {
+              content?: string;
+              tool_calls?: Array<{
+                id: string;
+                function: { name: string; arguments: string };
+              }>;
+            };
+          }>;
+        };
 
-      const choice = data.choices?.[0]?.message;
-      const text = choice?.content ?? '';
-      const toolCalls: LlmToolCall[] = [];
+        const choice = data.choices?.[0]?.message;
+        const text = choice?.content ?? '';
+        const toolCalls: LlmToolCall[] = [];
 
-      if (choice?.tool_calls && req.tools) {
-        for (const tc of choice.tool_calls) {
-          const spec = req.tools.find((t) => t.name === tc.function.name);
-          if (spec) {
-            let args: Record<string, unknown> = {};
-            try {
-              args = JSON.parse(tc.function.arguments);
-            } catch {
-              args = {};
+        if (choice?.tool_calls && req.tools) {
+          for (const tc of choice.tool_calls) {
+            const spec = req.tools.find((t) => t.name === tc.function.name);
+            if (spec) {
+              let args: Record<string, unknown> = {};
+              try {
+                args = JSON.parse(tc.function.arguments);
+              } catch {
+                args = {};
+              }
+              const result = await spec.execute(args);
+              toolCalls.push({ name: spec.name, args, result });
             }
-            const result = await spec.execute(args);
-            toolCalls.push({ name: spec.name, args, result });
           }
         }
-      }
 
-      return { text, toolCalls };
+        return { text, toolCalls };
+      } catch {
+        // Fallback to OmniRouter free models if LiteLLM proxy is offline
+        return createOmniRouterProvider().chat(req);
+      }
     },
   };
 }
@@ -226,14 +231,15 @@ export function createLiteLlmProvider(model: string = LITELLM_MODEL): LlmProvide
  * nvidia/nemotron-3.5-lightning:free -> inclusionai/ling-3.0-flash-vl:free -> liquid/lfm-2.5-2.6b:free -> openrouter/auto
  */
 export const FREE_MODELS_CASCADE = [
-  'nvidia/nemotron-3.5-lightning:free',
-  'inclusionai/ling-3.0-flash-vl:free',
-  'liquid/lfm-2.5-2.6b:free',
-  'nex-agi/nex-n2.5-pro:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'google/gemma-4-31b-it:free',
+  'openrouter/free',
   'openrouter/auto',
+  'z-ai/glm-5.2:free',
+  'nex-agi/nex-n2.5-mini:free',
 ];
 
-export function createOmniRouterProvider(defaultModel: string = 'nvidia/nemotron-3.5-lightning:free'): LlmProvider {
+export function createOmniRouterProvider(defaultModel: string = 'google/gemma-4-26b-a4b-it:free'): LlmProvider {
   return {
     name: 'omnirouter',
     async chat(req) {
@@ -268,7 +274,7 @@ export function createOmniRouterProvider(defaultModel: string = 'nvidia/nemotron
               model: modelName,
               messages,
             }),
-            signal: AbortSignal.timeout(20000),
+            signal: AbortSignal.timeout(6000),
           });
 
           if (!res.ok) {
@@ -284,7 +290,7 @@ export function createOmniRouterProvider(defaultModel: string = 'nvidia/nemotron
           }
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
-          // Continue to next free model in cascade
+          // Instant failover to next verified free model
         }
       }
 
