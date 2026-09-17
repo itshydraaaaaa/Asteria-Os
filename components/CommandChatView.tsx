@@ -42,14 +42,16 @@ type Message = {
 };
 
 type AgentActivityEvent = {
-  id: string;
+  id?: string;
+  kind?: 'run' | 'message' | 'broadcast' | string;
   agentId: string;
   agentName?: string;
-  status: 'running' | 'success' | 'error';
+  status?: string;
   summary?: string;
-  startedAt: string;
+  at?: string;
+  startedAt?: string;
   finishedAt?: string;
-  output?: string;
+  ok?: boolean;
 };
 
 const SUGGESTIONS = [
@@ -478,32 +480,34 @@ export function CommandChatView({
                   No execution runs logged yet. Send a command to trigger agent execution.
                 </div>
               ) : (
-                activities.map((act) => (
-                  <div key={act.id} className="rounded border border-os-border bg-os-surface p-2.5 space-y-1">
-                    <div className="flex items-center justify-between font-mono text-[10.5px]">
-                      <span className="font-bold text-os-text">@{act.agentId}</span>
-                      <span
-                        className={`rounded px-1.5 py-0.2 text-[9.5px] font-semibold ${
-                          act.status === 'success'
-                            ? 'bg-os-ok/15 text-os-ok'
-                            : act.status === 'running'
-                            ? 'bg-os-accent/15 text-os-accent animate-pulse'
-                            : 'bg-os-err/15 text-os-err'
-                        }`}
-                      >
-                        {act.status.toUpperCase()}
-                      </span>
-                    </div>
+                activities.map((act, index) => {
+                  const isOk = act.ok !== false && act.status !== 'error';
+                  const label = (act.kind || act.status || 'RUN').toUpperCase();
+                  const timeStr = act.at || act.finishedAt || act.startedAt;
 
-                    {act.summary && <p className="text-[11px] text-os-muted line-clamp-2">{act.summary}</p>}
+                  return (
+                    <div key={act.id || `${act.agentId}-${index}`} className="rounded border border-os-border bg-os-surface p-2.5 space-y-1">
+                      <div className="flex items-center justify-between font-mono text-[10.5px]">
+                        <span className="font-bold text-os-text">@{act.agentId}</span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[9.5px] font-semibold ${
+                            isOk ? 'bg-os-ok/15 text-os-ok' : 'bg-os-err/15 text-os-err'
+                          }`}
+                        >
+                          {label}
+                        </span>
+                      </div>
 
-                    <div className="text-[10px] font-mono text-os-dim">
-                      {act.finishedAt
-                        ? new Date(act.finishedAt).toLocaleTimeString()
-                        : new Date(act.startedAt).toLocaleTimeString()}
+                      {act.summary && <p className="text-[11px] text-os-muted line-clamp-2">{act.summary}</p>}
+
+                      {timeStr && (
+                        <div className="text-[10px] font-mono text-os-dim">
+                          {new Date(timeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
