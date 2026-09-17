@@ -231,15 +231,15 @@ export function createLiteLlmProvider(model: string = LITELLM_MODEL): LlmProvide
  * nvidia/nemotron-3.5-lightning:free -> inclusionai/ling-3.0-flash-vl:free -> liquid/lfm-2.5-2.6b:free -> openrouter/auto
  */
 export const FREE_MODELS_CASCADE = [
-  'google/gemma-4-26b-a4b-it:free',
   'google/gemma-4-31b-it:free',
   'openrouter/free',
+  'google/gemma-4-26b-a4b-it:free',
   'openrouter/auto',
   'z-ai/glm-5.2:free',
   'nex-agi/nex-n2.5-mini:free',
 ];
 
-export function createOmniRouterProvider(defaultModel: string = 'google/gemma-4-26b-a4b-it:free'): LlmProvider {
+export function createOmniRouterProvider(defaultModel: string = 'google/gemma-4-31b-it:free'): LlmProvider {
   return {
     name: 'omnirouter',
     async chat(req) {
@@ -252,7 +252,12 @@ export function createOmniRouterProvider(defaultModel: string = 'google/gemma-4-
       }
 
       const messages: { role: string; content: string }[] = [];
-      if (req.system) messages.push({ role: 'system', content: req.system });
+      let systemContent = req.system || '';
+      if (req.tools && req.tools.length > 0) {
+        const toolDocs = req.tools.map((t) => `- \`${t.name}\`: ${t.description}`).join('\n');
+        systemContent += `\n\n### LIVE TOOLS AVAILABLE TO YOU:\n${toolDocs}\n\nIMPORTANT: To query live data, Obsidian notes, or social platforms, output ONLY a JSON tool call:\n{"tool": "<tool_name>", "arguments": { ... }}`;
+      }
+      if (systemContent) messages.push({ role: 'system', content: systemContent });
       for (const m of req.messages) {
         if (m.role !== 'tool') messages.push({ role: m.role, content: m.content });
       }
@@ -300,22 +305,47 @@ export function createOmniRouterProvider(defaultModel: string = 'google/gemma-4-
             }
           }
 
-          // 2. Check JSON tool call format in text
-          if (req.tools && toolCalls.length === 0 && (text.includes('"tool"') || (text.includes('"name"') && text.includes('"arguments"')))) {
-            try {
-              const jsonMatch = text.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                const toolName = parsed.tool || parsed.name;
-                const toolArgs = parsed.arguments || parsed.args || parsed.parameters || {};
-                const spec = req.tools.find((t) => t.name === toolName);
-                if (spec) {
-                  const result = await spec.execute(toolArgs);
-                  toolCalls.push({ name: spec.name, args: toolArgs, result });
+          // 2. Check JSON or XML tool call format in text
+          if (req.tools && toolCalls.length === 0) {
+            // Check XML tool_call tag: <function=name><parameter=k>v</parameter>
+            if (text.includes('<tool_call>') || text.includes('<function=')) {
+              try {
+                const fnMatch = text.match(/<function=([^>]+)>/i);
+                if (fnMatch) {
+                  const toolName = fnMatch[1].trim();
+                  const args: Record<string, unknown> = {};
+                  const paramMatches = [...text.matchAll(/<parameter=([^>]+)>([\s\S]*?)<\/parameter>/gi)];
+                  for (const pm of paramMatches) {
+                    args[pm[1].trim()] = pm[2].trim();
+                  }
+                  const spec = req.tools.find((t) => t.name === toolName);
+                  if (spec) {
+                    const result = await spec.execute(args);
+                    toolCalls.push({ name: spec.name, args, result });
+                  }
                 }
+              } catch {
+                // Non-blocking
               }
-            } catch {
-              // Not JSON tool call, proceed with normal text
+            }
+
+            // Check JSON tool call format: {"tool": "name", "arguments": {...}}
+            if (toolCalls.length === 0 && (text.includes('"tool"') || (text.includes('"name"') && text.includes('"arguments"')))) {
+              try {
+                const jsonMatch = text.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                  const parsed = JSON.parse(jsonMatch[0]);
+                  const toolName = parsed.tool || parsed.name;
+                  const toolArgs = parsed.arguments || parsed.args || parsed.parameters || {};
+                  const spec = req.tools.find((t) => t.name === toolName);
+                  if (spec) {
+                    const result = await spec.execute(toolArgs);
+                    toolCalls.push({ name: spec.name, args: toolArgs, result });
+                  }
+                }
+              } catch {
+                // Not JSON tool call, proceed with normal text
+              }
             }
           }
 
@@ -323,13 +353,17 @@ export function createOmniRouterProvider(defaultModel: string = 'google/gemma-4-
           if (toolCalls.length > 0) {
             try {
               const synthesisMessages = [
-                ...messages,
-                { role: 'assistant', content: text },
+                {
+                  role: 'system',
+                  content:
+                    'You are an executive AI operator in Asteria OS. The tool execution is complete and the real data is provided below. Do NOT output any XML tags or tool calls. Synthesize a clean, clear, and comprehensive markdown response directly answering the user query.',
+                },
+                ...messages.filter((m) => m.role === 'user'),
                 {
                   role: 'user',
-                  content: `[TOOL RESULTS RETURNED]:\n${toolCalls
+                  content: `[VERIFIED REAL-TIME DATA FROM TOOLS]:\n${toolCalls
                     .map((tc) => `### ${tc.name} Results:\n${JSON.stringify(tc.result, null, 2)}`)
-                    .join('\n\n')}\n\nPlease analyze the real data above and provide a clear, comprehensive, and actionable answer for the operator.`,
+                    .join('\n\n')}\n\nPresent a clear, structured summary and actionable answer for the operator.`,
                 },
               ];
 
@@ -351,10 +385,15 @@ export function createOmniRouterProvider(defaultModel: string = 'google/gemma-4-
               if (synthRes.ok) {
                 const synthData = (await synthRes.json()) as any;
                 const synthText = synthData.choices?.[0]?.message?.content;
-                if (synthText) {
+                if (synthText && !synthText.includes('User Safety:') && !synthText.startsWith('<tool_call>')) {
                   return { text: synthText, toolCalls };
                 }
               }
+              // Format direct tool execution summary
+              const directSummary = toolCalls
+                .map((tc) => `### Live Results: ${tc.name.replace(/_/g, ' ').toUpperCase()}\n\n\`\`\`json\n${JSON.stringify(tc.result, null, 2)}\n\`\`\``)
+                .join('\n\n');
+              return { text: `Here are the results retrieved from your live tools:\n\n${directSummary}`, toolCalls };
             } catch {
               // Fallback to initial response
             }
