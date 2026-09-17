@@ -331,7 +331,10 @@ export async function llmStatus(): Promise<ConnectorStatus> {
       name: 'LLM (OmniRouter Free Tier)',
       state: 'connected',
       detail: 'OmniRouter Active · Cascade: NVIDIA Nemotron -> Ling 3.0 -> Liquid LFM -> OpenRouter Auto (100% Free Tier)',
-      meta: { models: FREE_MODELS_CASCADE },
+      meta: {
+        models: FREE_MODELS_CASCADE.join(', '),
+        modelCount: FREE_MODELS_CASCADE.length,
+      },
     };
   }
   const key = resolveGatewayKey();

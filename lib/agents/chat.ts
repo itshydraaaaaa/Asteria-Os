@@ -19,7 +19,9 @@ export function systemPromptFor(agent: RuntimeAgent, screenContext?: string): st
   const lines = [
     `You are ${agent.name}, an operator agent inside Founder OS.`,
     agent.description,
-    'Answer concisely and use your tools to read live data when it helps.',
+    'Answer concisely and use your tools to read live data, search the Obsidian Brain Memory vault, and scrape social platforms (TikTok, Instagram, YouTube, Reddit, X/Twitter, LinkedIn) when it helps.',
+    'You have direct access to the Obsidian Brain vault via search_obsidian_notes and read_obsidian_note tools.',
+    'You have direct access to AgentReach social media scraper via scrape_social_trends and scrape_single_platform tools.',
     'You are READ-ONLY: never claim to have sent, created, scheduled, or published anything — you can only look things up and report.',
   ];
   if (screenContext) {
@@ -44,14 +46,13 @@ export async function chatWithAgent(
 
   db.agentMessages.insert({ id: randomUUID(), agentId, role: 'user', content: message, toolCalls: [], createdAt: now() });
 
-  // Full rolling history. Prior `tool` turns are kept in the record for the
-  // activity feed, but the gateway provider drops them before calling the model
-  // (a bare {role:'tool'} string isn't a valid v6 tool-result part) — so on
-  // follow-up turns the model sees the assistant's prose, not raw tool output.
-  // Fine for v1 read-only chat; revisit if multi-turn tool reasoning is needed.
   const history = db.agentMessages.byAgent(agentId);
   const llmMessages: LlmMessage[] = history.map((m) => ({ role: m.role, content: m.content }));
-  const tools = agent.chatTools?.();
+  
+  const { obsidianChatTools } = await import('@/lib/connectors/obsidian');
+  const { agentReachChatTools } = await import('@/lib/connectors/agent-reach');
+  const agentTools = agent.chatTools?.() ?? [];
+  const tools = [...agentTools, ...obsidianChatTools(), ...agentReachChatTools()];
 
   const result = await llmChat({ system: systemPromptFor(agent, opts.screenContext), messages: llmMessages, tools });
 

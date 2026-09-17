@@ -25,6 +25,7 @@ const ROUTES: RouteEntry[] = [
   { route: 'agents/work', load: () => import('@/app/api/agents/work/route'), url: 'http://localhost/api/agents/work?agentId=data-agent' },
   { route: 'brain', load: () => import('@/app/api/brain/route'), url: 'http://localhost/api/brain' },
   { route: 'brain/graph', load: () => import('@/app/api/brain/graph/route'), url: 'http://localhost/api/brain/graph' },
+  { route: 'brain/obsidian', load: () => import('@/app/api/brain/obsidian/route'), url: 'http://localhost/api/brain/obsidian' },
   { route: 'brain/overview', load: () => import('@/app/api/brain/overview/route'), url: 'http://localhost/api/brain/overview' },
   { route: 'comms', load: () => import('@/app/api/comms/route'), url: 'http://localhost/api/comms' },
   { route: 'conductor/context', load: () => import('@/app/api/conductor/context/route'), url: 'http://localhost/api/conductor/context?path=/agents' },
