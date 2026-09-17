@@ -18,6 +18,9 @@ import {
   ChevronRight,
   ShieldCheck,
   Check,
+  Database,
+  Eye,
+  GitCompare,
 } from 'lucide-react';
 import type {
   ArchitectureAuditReport,
@@ -25,6 +28,7 @@ import type {
   EvolutionStep,
   EvolutionStepStatus,
 } from '@/lib/brain-evolution';
+import { DataChangesModal } from '@/components/data/DataChangesModal';
 
 export function BrainEvolutionStudio({ initialReport }: { initialReport?: ArchitectureAuditReport }) {
   const [report, setReport] = useState<ArchitectureAuditReport | null>(initialReport || null);
@@ -34,11 +38,21 @@ export function BrainEvolutionStudio({ initialReport }: { initialReport?: Archit
   const [activeTab, setActiveTab] = useState<'UPGRADES' | 'STEPS' | 'LOGS'>('UPGRADES');
   const [statusFilter, setStatusFilter] = useState<'ALL' | EvolutionStepStatus>('ALL');
 
+  // Inspector Modal State
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorData, setInspectorData] = useState<any>(null);
+  const [inspectorChanges, setInspectorChanges] = useState<any>(null);
+  const [inspectorTitle, setInspectorTitle] = useState('Obsidian Vault & Data Explorer');
+  const [inspectorSubtitle, setInspectorSubtitle] = useState('Inspect live note files and architecture diffs');
+  const [inspectorTab, setInspectorTab] = useState<'visual' | 'diff' | 'explorer' | 'json'>('explorer');
+  const [inspectorTable, setInspectorTable] = useState('obsidian_vault');
+
   // Custom step modal
   const [showAddStepModal, setShowAddStepModal] = useState(false);
   const [newStepTitle, setNewStepTitle] = useState('');
   const [newStepDepartment, setNewStepDepartment] = useState('AI Systems');
   const [newStepDesc, setNewStepDesc] = useState('');
+
 
   const fetchAudit = async () => {
     setLoading(true);
@@ -175,6 +189,21 @@ export function BrainEvolutionStudio({ initialReport }: { initialReport?: Archit
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              setInspectorData(null);
+              setInspectorTitle('Obsidian Vault & Data Explorer');
+              setInspectorSubtitle('Explore 130+ Obsidian Vault Notes and Live DB Tables');
+              setInspectorTab('explorer');
+              setInspectorTable('obsidian_vault');
+              setInspectorOpen(true);
+            }}
+            className="flex items-center gap-1.5 rounded-md border border-os-border bg-os-surface2 px-3 py-1.5 font-mono text-xs text-os-text hover:border-os-accent hover:text-os-accent transition-colors"
+          >
+            <Database className="h-3.5 w-3.5 text-os-accent" />
+            <span>Vault & DB Explorer</span>
+          </button>
+
           <button
             onClick={fetchAudit}
             disabled={loading}
@@ -343,10 +372,30 @@ export function BrainEvolutionStudio({ initialReport }: { initialReport?: Archit
 
                 <div className="mt-4 flex items-center justify-between pt-2 border-t border-os-border/50">
                   <button
-                    onClick={() => setSelectedSuggestion(sug)}
-                    className="font-mono text-xs text-os-muted hover:text-os-accent transition-colors"
+                    onClick={() => {
+                      setInspectorData({
+                        id: sug.id,
+                        title: sug.title,
+                        category: sug.category,
+                        priority: sug.priority,
+                        targetPath: sug.targetPath,
+                        impact: sug.impact,
+                        description: sug.description,
+                        suggestedContent: sug.suggestedContent,
+                      });
+                      setInspectorTitle(`Architecture Upgrade Diff: ${sug.title}`);
+                      setInspectorSubtitle(`Target Note: ${sug.targetPath} · Impact: ${sug.impact}`);
+                      setInspectorTab('diff');
+                      setInspectorChanges({
+                        before: `Existing note content at ${sug.targetPath}`,
+                        after: sug.suggestedContent,
+                      });
+                      setInspectorOpen(true);
+                    }}
+                    className="flex items-center gap-1 font-mono text-xs text-os-muted hover:text-os-accent transition-colors"
                   >
-                    View Code Diff
+                    <GitCompare className="h-3 w-3" />
+                    <span>Inspect Code Diff & Data</span>
                   </button>
 
                   {sug.applied ? (
@@ -625,6 +674,19 @@ export function BrainEvolutionStudio({ initialReport }: { initialReport?: Archit
           </form>
         </div>
       )}
+
+      {/* Global Data & Changes Inspector Modal */}
+      <DataChangesModal
+        isOpen={inspectorOpen}
+        onClose={() => setInspectorOpen(false)}
+        title={inspectorTitle}
+        subtitle={inspectorSubtitle}
+        initialData={inspectorData}
+        changes={inspectorChanges}
+        defaultTab={inspectorTab}
+        tableName={inspectorTable}
+      />
     </div>
   );
 }
+

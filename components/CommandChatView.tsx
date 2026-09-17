@@ -20,7 +20,12 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  Database,
+  Eye,
+  GitCompare,
+  Table as TableIcon,
 } from 'lucide-react';
+import { DataChangesModal } from '@/components/data/DataChangesModal';
 
 type ToolCallItem = {
   name: string;
@@ -48,6 +53,8 @@ type AgentActivityEvent = {
   agentName?: string;
   status?: string;
   summary?: string;
+  input?: any;
+  output?: any;
   at?: string;
   startedAt?: string;
   finishedAt?: string;
@@ -76,7 +83,41 @@ export function CommandChatView({
   const [activities, setActivities] = useState<AgentActivityEvent[]>([]);
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
   const [showActivitySidebar, setShowActivitySidebar] = useState(true);
+  
+  // Data & Changes Inspector State
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorData, setInspectorData] = useState<any>(null);
+  const [inspectorChanges, setInspectorChanges] = useState<any>(null);
+  const [inspectorTitle, setInspectorTitle] = useState('Data & Changes Explorer');
+  const [inspectorSubtitle, setInspectorSubtitle] = useState('Inspect live system data, execution outputs, and state diffs');
+  const [inspectorTab, setInspectorTab] = useState<'visual' | 'diff' | 'explorer' | 'json'>('visual');
+  const [inspectorTable, setInspectorTable] = useState('agent_runs');
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const openInspectorForData = (
+    data: any,
+    title: string,
+    subtitle?: string,
+    tab: 'visual' | 'diff' | 'explorer' | 'json' = 'visual',
+    changes?: any,
+  ) => {
+    setInspectorData(data);
+    setInspectorTitle(title);
+    setInspectorSubtitle(subtitle || 'Live execution payload and state diff');
+    setInspectorTab(tab);
+    setInspectorChanges(changes);
+    setInspectorOpen(true);
+  };
+
+  const openExplorer = (tbl: string = 'agent_runs') => {
+    setInspectorData(null);
+    setInspectorTitle('Database & Vault Data Explorer');
+    setInspectorSubtitle('Browse live database tables and Obsidian notes');
+    setInspectorTab('explorer');
+    setInspectorTable(tbl);
+    setInspectorOpen(true);
+  };
+
 
   const loadChatHistory = useCallback(async (agentId: string) => {
     try {
@@ -258,6 +299,15 @@ export function CommandChatView({
             </select>
 
             <button
+              onClick={() => openExplorer('agent_runs')}
+              className="flex items-center gap-1.5 rounded-md border border-os-border bg-os-surface px-2.5 py-1 font-mono text-xs text-os-text hover:border-os-accent hover:text-os-accent transition-colors"
+              title="Open Live Database & Vault Data Explorer"
+            >
+              <Database className="h-3.5 w-3.5 text-os-accent" />
+              <span>Data Explorer</span>
+            </button>
+
+            <button
               onClick={() => setShowActivitySidebar((v) => !v)}
               className={`rounded-md border px-2.5 py-1 font-mono text-xs transition-colors ${
                 showActivitySidebar
@@ -353,10 +403,77 @@ export function CommandChatView({
                                     Output: {typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result, null, 2)}
                                   </div>
                                 )}
+                                <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-os-border/40">
+                                  <button
+                                    onClick={() =>
+                                      openInspectorForData(
+                                        tc.result !== undefined ? tc.result : tc,
+                                        `Tool Data: ${tc.name}`,
+                                        `Arguments: ${JSON.stringify(tc.args || {})}`,
+                                        'visual',
+                                      )
+                                    }
+                                    className="flex items-center gap-1 text-[10.5px] text-os-accent hover:underline font-bold"
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                    <span>Inspect Tool Output & Table</span>
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      openInspectorForData(
+                                        tc,
+                                        `Tool Payload: ${tc.name}`,
+                                        'Raw JSON & Schema View',
+                                        'json',
+                                      )
+                                    }
+                                    className="text-[10px] text-os-dim hover:text-os-text"
+                                  >
+                                    Raw JSON
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Data & Diff Inspection Footer Bar on Agent Messages */}
+                    {m.sender === 'agent' && (
+                      <div className="mt-3 flex items-center justify-between border-t border-os-border/50 pt-2 font-mono text-[10.5px]">
+                        <button
+                          onClick={() =>
+                            openInspectorForData(
+                              m.toolCalls && m.toolCalls.length > 0
+                                ? { agent: m.agentName, message: m.text, toolCalls: m.toolCalls }
+                                : { agent: m.agentName, message: m.text, timestamp: m.timestamp },
+                              `Data Inspector: ${m.agentName || 'Agent Response'}`,
+                              `Timestamp: ${m.timestamp} · Persisted Message ID: ${m.id}`,
+                              'visual',
+                            )
+                          }
+                          className="flex items-center gap-1 text-os-accent hover:underline font-semibold"
+                        >
+                          <Eye className="h-3 w-3" />
+                          <span>Inspect Data & Schema</span>
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            openInspectorForData(
+                              { message: m.text, toolCalls: m.toolCalls },
+                              `Changes & Diff: ${m.agentName || 'Agent Execution'}`,
+                              `Execution Delta & Mutated State`,
+                              'diff',
+                              { before: 'Prompt received by agent', after: m.text }
+                            )
+                          }
+                          className="flex items-center gap-1 text-os-muted hover:text-os-text"
+                        >
+                          <GitCompare className="h-3 w-3" />
+                          <span>View State Diff</span>
+                        </button>
                       </div>
                     )}
 
@@ -455,18 +572,29 @@ export function CommandChatView({
               <Zap className="h-3.5 w-3.5 text-os-accent" />
               <span>Implementation Stream</span>
             </span>
-            <span className="text-[10px] text-os-dim font-normal">{activities.length} runs logged</span>
+            <button
+              onClick={() => openExplorer('agent_runs')}
+              className="text-[10px] text-os-accent hover:underline font-normal"
+            >
+              View All ({activities.length}) →
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            <div className="rounded-md border border-os-border bg-os-surface p-3 space-y-1.5">
-              <div className="font-mono text-[10.5px] uppercase text-os-dim">Connected Brain Memory</div>
+            <div
+              onClick={() => openExplorer('obsidian_vault')}
+              className="cursor-pointer rounded-md border border-os-border bg-os-surface p-3 space-y-1.5 hover:border-os-accent transition-colors"
+            >
+              <div className="flex items-center justify-between font-mono text-[10.5px] uppercase text-os-dim">
+                <span>Connected Brain Memory</span>
+                <span className="text-os-accent text-[9.5px]">Open Vault →</span>
+              </div>
               <div className="text-xs font-semibold text-os-text flex items-center gap-1.5">
                 <CheckCircle className="h-3.5 w-3.5 text-os-ok" />
                 <span>130+ Obsidian Vault Notes Indexed</span>
               </div>
               <p className="text-[11px] text-os-muted leading-relaxed">
-                Agents query your vaults dynamically on every prompt using <code className="text-os-accent">search_obsidian_notes</code>.
+                Click to explore vault notes, search contents, and inspect files in the Data Explorer.
               </p>
             </div>
 
@@ -486,7 +614,22 @@ export function CommandChatView({
                   const timeStr = act.at || act.finishedAt || act.startedAt;
 
                   return (
-                    <div key={act.id || `${act.agentId}-${index}`} className="rounded border border-os-border bg-os-surface p-2.5 space-y-1">
+                    <div
+                      key={act.id || `${act.agentId}-${index}`}
+                      onClick={() =>
+                        openInspectorForData(
+                          act,
+                          `Execution Run: @${act.agentId}`,
+                          `Status: ${label} · Timestamp: ${timeStr ? new Date(timeStr).toLocaleString() : 'Recent'}`,
+                          'visual',
+                          {
+                            before: act.input || 'Initial Trigger & Input',
+                            after: act.output || act.summary || 'Execution Result',
+                          }
+                        )
+                      }
+                      className="cursor-pointer rounded border border-os-border bg-os-surface p-2.5 space-y-1 hover:border-os-accent transition-colors group"
+                    >
                       <div className="flex items-center justify-between font-mono text-[10.5px]">
                         <span className="font-bold text-os-text">@{act.agentId}</span>
                         <span
@@ -500,11 +643,14 @@ export function CommandChatView({
 
                       {act.summary && <p className="text-[11px] text-os-muted line-clamp-2">{act.summary}</p>}
 
-                      {timeStr && (
-                        <div className="text-[10px] font-mono text-os-dim">
-                          {new Date(timeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </div>
-                      )}
+                      <div className="flex items-center justify-between pt-1 font-mono text-[9.5px] text-os-dim">
+                        <span>
+                          {timeStr ? new Date(timeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}
+                        </span>
+                        <span className="text-os-accent opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                          Inspect <ArrowRight className="h-2.5 w-2.5" />
+                        </span>
+                      </div>
                     </div>
                   );
                 })
@@ -513,9 +659,22 @@ export function CommandChatView({
           </div>
         </div>
       )}
+
+      {/* Global Data & Changes Inspector Modal */}
+      <DataChangesModal
+        isOpen={inspectorOpen}
+        onClose={() => setInspectorOpen(false)}
+        title={inspectorTitle}
+        subtitle={inspectorSubtitle}
+        initialData={inspectorData}
+        changes={inspectorChanges}
+        defaultTab={inspectorTab}
+        tableName={inspectorTable}
+      />
     </div>
   );
 }
+
 
 function renderInline(str: string): React.ReactNode {
   const parts = str.split(/(\*\*.*?\*\*|`.*?`)/g);
