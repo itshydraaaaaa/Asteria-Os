@@ -12,7 +12,10 @@ let instance: FounderDb | null = null;
 
 export function getDb(): FounderDb {
   if (instance) return instance;
-  const dbPath = process.env.FOUNDER_OS_DB ?? path.join(process.cwd(), 'data', 'founder-os.db');
+  const defaultPath = process.env.VERCEL
+    ? path.join('/tmp', 'founder-os.db')
+    : path.join(process.cwd(), 'data', 'founder-os.db');
+  const dbPath = process.env.FOUNDER_OS_DB ?? defaultPath;
   if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   instance = openDb(dbPath);
   // Seed on first touch so a fresh clone boots looking alive. Each clause
