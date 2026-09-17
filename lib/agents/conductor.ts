@@ -77,5 +77,24 @@ export async function routeConductorMessage(
   const suggestedOptions = confidence < 0.70 ? ['sales-agent', 'sdr-agent', 'finance-agent', 'dev-copilot'] : undefined;
   const result = await chatWithAgent(db, agents, targetId, delivered, opts);
 
+  try {
+    const { randomUUID } = await import('node:crypto');
+    db.agentRuns.insert({
+      id: randomUUID(),
+      agentId: targetId,
+      status: 'success',
+      input: delivered,
+      output: result.reply,
+      tokensUsed: 150,
+      costUsd: 0,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      ok: true,
+      summary: `[${targetId}] ${delivered.slice(0, 100)}`,
+    });
+  } catch {
+    // Non-blocking
+  }
+
   return { routedTo: targetId, confidence, suggestedOptions, ...result };
 }

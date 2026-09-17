@@ -7,6 +7,20 @@ import { routeConductorMessage } from '@/lib/agents/conductor';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs'; // better-sqlite3 is native — keep off the edge runtime
 
+export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const db = getDb();
+  const isConductor = params.id === 'conductor';
+  if (!isConductor && !realAgents.some((a) => a.id === params.id)) {
+    return NextResponse.json({ error: `unknown agent: ${params.id}` }, { status: 404 });
+  }
+
+  const messages = isConductor
+    ? db.agentMessages.recent(50).reverse()
+    : db.agentMessages.byAgent(params.id);
+
+  return NextResponse.json({ ok: true, agentId: params.id, messages });
+}
+
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   let message = '';
   let screenContext: string | undefined;

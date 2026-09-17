@@ -285,8 +285,83 @@ export function createOmniRouterProvider(defaultModel: string = 'google/gemma-4-
           const data = (await res.json()) as any;
           const choice = data.choices?.[0]?.message;
           const text = choice?.content ?? '';
+          const toolCalls: LlmToolCall[] = [];
+
+          // 1. Check API tool_calls
+          if (choice?.tool_calls && req.tools) {
+            for (const tc of choice.tool_calls) {
+              const spec = req.tools.find((t) => t.name === tc.function.name);
+              if (spec) {
+                let args: Record<string, unknown> = {};
+                try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+                const result = await spec.execute(args);
+                toolCalls.push({ name: spec.name, args, result });
+              }
+            }
+          }
+
+          // 2. Check JSON tool call format in text
+          if (req.tools && toolCalls.length === 0 && (text.includes('"tool"') || (text.includes('"name"') && text.includes('"arguments"')))) {
+            try {
+              const jsonMatch = text.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                const toolName = parsed.tool || parsed.name;
+                const toolArgs = parsed.arguments || parsed.args || parsed.parameters || {};
+                const spec = req.tools.find((t) => t.name === toolName);
+                if (spec) {
+                  const result = await spec.execute(toolArgs);
+                  toolCalls.push({ name: spec.name, args: toolArgs, result });
+                }
+              }
+            } catch {
+              // Not JSON tool call, proceed with normal text
+            }
+          }
+
+          // 3. If tools were executed and the first response was just the raw tool invocation, do a synthesis pass
+          if (toolCalls.length > 0) {
+            try {
+              const synthesisMessages = [
+                ...messages,
+                { role: 'assistant', content: text },
+                {
+                  role: 'user',
+                  content: `[TOOL RESULTS RETURNED]:\n${toolCalls
+                    .map((tc) => `### ${tc.name} Results:\n${JSON.stringify(tc.result, null, 2)}`)
+                    .join('\n\n')}\n\nPlease analyze the real data above and provide a clear, comprehensive, and actionable answer for the operator.`,
+                },
+              ];
+
+              const synthRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${apiKey}`,
+                  'HTTP-Referer': 'https://asteria-os.vercel.app',
+                  'X-Title': 'Asteria OS OmniRouter',
+                },
+                body: JSON.stringify({
+                  model: modelName,
+                  messages: synthesisMessages,
+                }),
+                signal: AbortSignal.timeout(8000),
+              });
+
+              if (synthRes.ok) {
+                const synthData = (await synthRes.json()) as any;
+                const synthText = synthData.choices?.[0]?.message?.content;
+                if (synthText) {
+                  return { text: synthText, toolCalls };
+                }
+              }
+            } catch {
+              // Fallback to initial response
+            }
+          }
+
           if (text) {
-            return { text, toolCalls: [] };
+            return { text, toolCalls };
           }
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));

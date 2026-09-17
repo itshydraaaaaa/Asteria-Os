@@ -1,24 +1,63 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Terminal, ArrowRight } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  Send,
+  Bot,
+  User,
+  Sparkles,
+  Terminal,
+  ArrowRight,
+  RefreshCw,
+  Trash2,
+  Layers,
+  Wrench,
+  CheckCircle,
+  Activity,
+  Zap,
+  TrendingUp,
+  FileText,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+} from 'lucide-react';
+
+type ToolCallItem = {
+  name: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
+};
 
 type Message = {
   id: string;
-  sender: 'user' | 'agent';
+  sender: 'user' | 'agent' | 'tool';
   agentId?: string;
   agentName?: string;
   text: string;
+  toolCalls?: ToolCallItem[];
   routedTo?: string;
   confidence?: number;
   suggestedOptions?: string[];
   timestamp: string;
 };
 
+type AgentActivityEvent = {
+  id: string;
+  agentId: string;
+  agentName?: string;
+  status: 'running' | 'success' | 'error';
+  summary?: string;
+  startedAt: string;
+  finishedAt?: string;
+  output?: string;
+};
+
 const SUGGESTIONS = [
   { label: 'Check system health', prompt: 'Check all system connectors and report current status.' },
+  { label: 'Obsidian GTM Strategy', prompt: 'Search our Obsidian vault notes for our GTM Strategy and summarize key phases.' },
+  { label: 'Scrape Social Trends', prompt: 'Scrape the latest viral trends and hooks for agency automation across TikTok, Reddit, and Instagram.' },
+  { label: 'Audit Brain Architecture', prompt: 'Audit our brain architecture and list active upgrade suggestions.' },
   { label: 'Find new leads', prompt: '@sdr-agent Find 5 new client leads for our freelance web services.' },
-  { label: 'Draft proposal', prompt: '@sales-agent Draft a $5,000 web app proposal for a potential client.' },
   { label: 'Revenue summary', prompt: '@finance-agent Provide a summary of current monthly revenue and pending invoices.' },
 ];
 
@@ -27,24 +66,83 @@ export function CommandChatView({
 }: {
   agents: { id: string; name: string; role: string }[];
 }) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'init-1',
-      sender: 'agent',
-      agentId: 'conductor',
-      agentName: 'Asteria Conductor',
-      text: 'Welcome to the Asteria Command Center. I am your Conductor super-agent. Ask me anything or type `@agentName <command>` to route directly to a specialized agent.',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [targetAgent, setTargetAgent] = useState('conductor');
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [activities, setActivities] = useState<AgentActivityEvent[]>([]);
+  const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
+  const [showActivitySidebar, setShowActivitySidebar] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const loadChatHistory = useCallback(async (agentId: string) => {
+    try {
+      const res = await fetch(`/api/agents/${agentId}/chat`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.messages && data.messages.length > 0) {
+          const mapped: Message[] = data.messages.map((m: any) => {
+            const foundAgent = agents.find((a) => a.id === m.agentId);
+            return {
+              id: m.id,
+              sender: m.role === 'user' ? 'user' : m.role === 'tool' ? 'tool' : 'agent',
+              agentId: m.agentId,
+              agentName: foundAgent ? foundAgent.name : m.agentId === 'conductor' ? 'Asteria Conductor' : 'Asteria Agent',
+              text: m.content,
+              toolCalls: m.toolCalls,
+              timestamp: m.createdAt
+                ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '',
+            };
+          });
+          setMessages(mapped);
+          return;
+        }
+      }
+      // If empty history, show standard welcome
+      setMessages([
+        {
+          id: 'init-1',
+          sender: 'agent',
+          agentId: targetAgent,
+          agentName: targetAgent === 'conductor' ? 'Asteria Conductor' : agents.find((a) => a.id === targetAgent)?.name || targetAgent,
+          text: `Ready for commands. I am wired to your live Obsidian vaults, AgentReach social scrapers, and autonomous agent roster. Ask anything or dispatch a task.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
+    } catch (err) {
+      console.error('Failed to load chat history', err);
+    } finally {
+      setInitialLoading(false);
+    }
+  }, [agents, targetAgent]);
+
+  const loadRecentActivity = async () => {
+    try {
+      const res = await fetch('/api/agents/activity?limit=8');
+      if (res.ok) {
+        const data = await res.json();
+        const evts = data.events || data.runs || [];
+        setActivities(evts.slice(0, 8));
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    loadChatHistory(targetAgent);
+    loadRecentActivity();
+  }, [targetAgent, loadChatHistory]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
+
+  const toggleToolExpand = (msgId: string) => {
+    setExpandedTools((prev) => ({ ...prev, [msgId]: !prev[msgId] }));
+  };
 
   const handleSend = async (textToSend?: string) => {
     const text = (textToSend || input).trim();
@@ -83,10 +181,14 @@ export function CommandChatView({
           agentId: routedTo || targetAgent,
           agentName: respondingAgent.name,
           text: agentMsgText,
+          toolCalls: body.toolCalls,
           routedTo,
+          confidence: body.confidence,
+          suggestedOptions: body.suggestedOptions,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         };
         setMessages((prev) => [...prev, replyMsg]);
+        loadRecentActivity();
       } else {
         const errBody = await res.json().catch(() => ({}));
         setMessages((prev) => [
@@ -117,149 +219,296 @@ export function CommandChatView({
   };
 
   return (
-    <div className="flex h-[calc(100vh-120px)] flex-col rounded-xl border border-os-border bg-os-surface overflow-hidden">
-      {/* Header controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-os-border bg-os-bg2 px-4 py-3">
-        <div className="flex items-center gap-2 font-mono text-xs text-os-text">
-          <Terminal className="h-4 w-4 text-os-accent" />
-          <span className="font-bold uppercase tracking-wider">Asteria Command Terminal</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] uppercase text-os-dim">Target Agent:</span>
-          <select
-            value={targetAgent}
-            onChange={(e) => setTargetAgent(e.target.value)}
-            className="rounded-md border border-os-border bg-os-bg px-2.5 py-1 font-mono text-xs text-os-text outline-none focus:border-os-accent"
-          >
-            <option value="conductor">★ Conductor (Auto-Route)</option>
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} ({a.role})
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+    <div className="flex h-[calc(100vh-120px)] rounded-xl border border-os-border bg-os-surface overflow-hidden">
+      {/* Main Chat Stream Area */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Header controls */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-os-border bg-os-surface2 px-4 py-3">
+          <div className="flex items-center gap-2 font-mono text-xs text-os-text">
+            <Terminal className="h-4 w-4 text-os-accent" />
+            <span className="font-bold uppercase tracking-wider">Asteria Command Terminal</span>
+            <span className="rounded-full bg-os-ok/15 px-2 py-0.5 text-[10px] font-semibold text-os-ok">
+              ● Live Connected
+            </span>
+          </div>
 
-      {/* Message stream */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={`flex items-start gap-3 ${m.sender === 'user' ? 'flex-row-reverse' : ''}`}
-          >
-            <div
-              className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border font-mono text-xs ${
-                m.sender === 'user'
-                  ? 'border-os-accent/30 bg-os-accent/10 text-os-accent'
-                  : 'border-os-border bg-os-bg2 text-os-text'
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => loadChatHistory(targetAgent)}
+              title="Refresh Conversation"
+              className="rounded p-1 text-os-muted hover:text-os-text hover:bg-os-border/30"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
+
+            <span className="font-mono text-[10px] uppercase text-os-dim">Target:</span>
+            <select
+              value={targetAgent}
+              onChange={(e) => setTargetAgent(e.target.value)}
+              className="rounded-md border border-os-border bg-os-surface px-2.5 py-1 font-mono text-xs text-os-text outline-none focus:border-os-accent"
+            >
+              <option value="conductor">★ Conductor (Smart Auto-Route)</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.role})
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={() => setShowActivitySidebar((v) => !v)}
+              className={`rounded-md border px-2.5 py-1 font-mono text-xs transition-colors ${
+                showActivitySidebar
+                  ? 'border-os-accent bg-os-accent/10 text-os-accent'
+                  : 'border-os-border text-os-dim hover:text-os-text'
               }`}
             >
-              {m.sender === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4 text-os-accent" />}
+              <Activity className="h-3.5 w-3.5 inline mr-1" />
+              <span>Activity Hub</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Message stream */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {initialLoading ? (
+            <div className="flex items-center justify-center h-full text-os-dim font-mono text-xs">
+              <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+              <span>Loading persisted agent history...</span>
+            </div>
+          ) : (
+            messages.map((m) => (
+              <div
+                key={m.id}
+                className={`flex items-start gap-3 ${m.sender === 'user' ? 'flex-row-reverse' : ''}`}
+              >
+                <div
+                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border font-mono text-xs ${
+                    m.sender === 'user'
+                      ? 'border-os-accent/30 bg-os-accent/10 text-os-accent'
+                      : m.sender === 'tool'
+                      ? 'border-blue-500/30 bg-blue-500/10 text-blue-400'
+                      : 'border-os-border bg-os-surface2 text-os-text'
+                  }`}
+                >
+                  {m.sender === 'user' ? (
+                    <User className="h-4 w-4" />
+                  ) : m.sender === 'tool' ? (
+                    <Wrench className="h-4 w-4" />
+                  ) : (
+                    <Bot className="h-4 w-4 text-os-accent" />
+                  )}
+                </div>
+
+                <div className={`max-w-[85%] flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
+                  <div className="mb-1 flex items-center gap-2 font-mono text-[10px] text-os-dim">
+                    <span className="font-semibold text-os-muted">
+                      {m.sender === 'user' ? 'Operator' : m.sender === 'tool' ? 'System Tool Action' : m.agentName}
+                    </span>
+                    {m.routedTo && (
+                      <span className="rounded bg-os-accent/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-os-accent">
+                        routed to @{m.routedTo}
+                      </span>
+                    )}
+                    <span>{m.timestamp}</span>
+                  </div>
+
+                  <div
+                    className={`rounded-xl px-4 py-3 text-xs leading-relaxed shadow-sm ${
+                      m.sender === 'user'
+                        ? 'bg-os-accent text-os-ink font-medium'
+                        : m.sender === 'tool'
+                        ? 'border border-blue-500/30 bg-blue-500/5 text-blue-200'
+                        : 'border border-os-border bg-os-surface2 text-os-text'
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap">{m.text}</div>
+
+                    {/* Tool Calls Execution Box */}
+                    {m.toolCalls && m.toolCalls.length > 0 && (
+                      <div className="mt-3 border-t border-os-border/50 pt-2.5 space-y-2">
+                        <button
+                          onClick={() => toggleToolExpand(m.id)}
+                          className="flex items-center gap-1.5 font-mono text-[10.5px] font-bold text-os-accent hover:underline"
+                        >
+                          <Wrench className="h-3 w-3" />
+                          <span>{m.toolCalls.length} Tool Actions Executed</span>
+                          {expandedTools[m.id] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                        </button>
+
+                        {expandedTools[m.id] && (
+                          <div className="space-y-2 pt-1">
+                            {m.toolCalls.map((tc, idx) => (
+                              <div key={idx} className="rounded bg-black/40 p-2.5 font-mono text-[11px] border border-os-border">
+                                <div className="text-os-accent font-semibold">⚡ {tc.name}</div>
+                                {tc.args && (
+                                  <div className="mt-1 text-os-dim">
+                                    Args: {JSON.stringify(tc.args)}
+                                  </div>
+                                )}
+                                {tc.result !== undefined && (
+                                  <div className="mt-1 text-emerald-400 max-h-32 overflow-y-auto whitespace-pre-wrap">
+                                    Output: {typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result, null, 2)}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {m.confidence !== undefined && m.confidence < 0.70 && m.suggestedOptions && (
+                      <div className="mt-3 border-t border-os-border/50 pt-2.5">
+                        <div className="font-mono text-[10px] text-os-warn mb-1.5 font-semibold">
+                          ⚠ Low routing confidence ({Math.round(m.confidence * 100)}%). Direct to target agent:
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {m.suggestedOptions.map((opt) => (
+                            <button
+                              key={opt}
+                              onClick={() => {
+                                setTargetAgent(opt);
+                                setInput(`@${opt} `);
+                              }}
+                              className="rounded border border-os-accent/40 bg-os-accent/10 px-2 py-1 font-mono text-[10px] text-os-accent hover:bg-os-accent hover:text-os-ink transition-colors"
+                            >
+                              @{opt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+
+          {loading && (
+            <div className="flex items-center gap-3">
+              <div className="grid h-8 w-8 place-items-center rounded-lg border border-os-border bg-os-surface2">
+                <Sparkles className="h-4 w-4 animate-spin text-os-accent" />
+              </div>
+              <div className="font-mono text-xs text-os-dim animate-pulse">
+                Processing command · Executing Obsidian Memory search & AgentReach scrapers...
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Command suggestion chips */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-os-border bg-os-surface2/60 px-4 py-2">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-os-dim">Shortcuts:</span>
+          {SUGGESTIONS.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => handleSend(s.prompt)}
+              className="flex items-center gap-1 rounded-full border border-os-border bg-os-surface px-2.5 py-0.5 font-mono text-[10.5px] text-os-muted transition-colors hover:border-os-accent hover:text-os-accent"
+            >
+              <span>{s.label}</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          ))}
+        </div>
+
+        {/* Input bar */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSend();
+          }}
+          className="flex items-center gap-2 border-t border-os-border bg-os-surface p-3"
+        >
+          <input
+            type="text"
+            placeholder={
+              targetAgent === 'conductor'
+                ? 'Command Asteria OS... (e.g. "search obsidian for GTM", "scrape viral hooks", "@sales-agent write proposal")'
+                : `Message ${agents.find((a) => a.id === targetAgent)?.name || targetAgent}...`
+            }
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={loading}
+            className="flex-1 rounded-lg border border-os-border bg-os-surface2 px-4 py-2.5 text-xs text-os-text outline-none focus:border-os-accent"
+            autoFocus
+          />
+          <button
+            type="submit"
+            disabled={loading || !input.trim()}
+            className="flex items-center gap-1.5 rounded-lg bg-os-accent px-4 py-2.5 font-mono text-xs font-bold text-os-ink transition-opacity disabled:opacity-50 hover:opacity-90 shadow-sm"
+          >
+            <span>Execute</span>
+            <Send className="h-3.5 w-3.5" />
+          </button>
+        </form>
+      </div>
+
+      {/* Right Sidebar: Implementation & Action Stream */}
+      {showActivitySidebar && (
+        <div className="w-80 border-l border-os-border bg-os-surface2/40 flex flex-col overflow-hidden">
+          <div className="border-b border-os-border p-3.5 font-mono text-xs font-bold text-os-text flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Zap className="h-3.5 w-3.5 text-os-accent" />
+              <span>Implementation Stream</span>
+            </span>
+            <span className="text-[10px] text-os-dim font-normal">{activities.length} runs logged</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            <div className="rounded-md border border-os-border bg-os-surface p-3 space-y-1.5">
+              <div className="font-mono text-[10.5px] uppercase text-os-dim">Connected Brain Memory</div>
+              <div className="text-xs font-semibold text-os-text flex items-center gap-1.5">
+                <CheckCircle className="h-3.5 w-3.5 text-os-ok" />
+                <span>130+ Obsidian Vault Notes Indexed</span>
+              </div>
+              <p className="text-[11px] text-os-muted leading-relaxed">
+                Agents query your vaults dynamically on every prompt using <code className="text-os-accent">search_obsidian_notes</code>.
+              </p>
             </div>
 
-            <div className={`max-w-[80%] flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
-              <div className="mb-1 flex items-center gap-2 font-mono text-[10px] text-os-dim">
-                <span className="font-semibold text-os-muted">{m.sender === 'user' ? 'Operator' : m.agentName}</span>
-                {m.routedTo && (
-                  <span className="rounded bg-os-accent/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-os-accent">
-                    routed to @{m.routedTo}
-                  </span>
-                )}
-                <span>{m.timestamp}</span>
+            <div className="space-y-2">
+              <div className="font-mono text-[10.5px] uppercase text-os-dim tracking-wider">
+                Recent Agent Runs & Actions
               </div>
 
-              <div
-                className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${
-                  m.sender === 'user'
-                    ? 'bg-os-accent text-os-accent-ink font-medium shadow-sm'
-                    : 'border border-os-border bg-os-bg text-os-text'
-                }`}
-              >
-                <div className="whitespace-pre-wrap">{m.text}</div>
-
-                {m.confidence !== undefined && m.confidence < 0.70 && m.suggestedOptions && (
-                  <div className="mt-3 border-t border-os-border/50 pt-2.5">
-                    <div className="font-mono text-[10px] text-os-warn mb-1.5 font-semibold">
-                      ⚠ Low routing confidence ({Math.round(m.confidence * 100)}%). Direct to target agent:
+              {activities.length === 0 ? (
+                <div className="rounded border border-dashed border-os-border p-4 text-center font-mono text-[11px] text-os-dim">
+                  No execution runs logged yet. Send a command to trigger agent execution.
+                </div>
+              ) : (
+                activities.map((act) => (
+                  <div key={act.id} className="rounded border border-os-border bg-os-surface p-2.5 space-y-1">
+                    <div className="flex items-center justify-between font-mono text-[10.5px]">
+                      <span className="font-bold text-os-text">@{act.agentId}</span>
+                      <span
+                        className={`rounded px-1.5 py-0.2 text-[9.5px] font-semibold ${
+                          act.status === 'success'
+                            ? 'bg-os-ok/15 text-os-ok'
+                            : act.status === 'running'
+                            ? 'bg-os-accent/15 text-os-accent animate-pulse'
+                            : 'bg-os-err/15 text-os-err'
+                        }`}
+                      >
+                        {act.status.toUpperCase()}
+                      </span>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {m.suggestedOptions.map((opt) => (
-                        <button
-                          key={opt}
-                          onClick={() => {
-                            setTargetAgent(opt);
-                            setInput(`@${opt} `);
-                          }}
-                          className="rounded border border-os-accent/40 bg-os-accent/10 px-2 py-1 font-mono text-[10px] text-os-accent hover:bg-os-accent hover:text-os-ink transition-colors"
-                        >
-                          @{opt}
-                        </button>
-                      ))}
+
+                    {act.summary && <p className="text-[11px] text-os-muted line-clamp-2">{act.summary}</p>}
+
+                    <div className="text-[10px] font-mono text-os-dim">
+                      {act.finishedAt
+                        ? new Date(act.finishedAt).toLocaleTimeString()
+                        : new Date(act.startedAt).toLocaleTimeString()}
                     </div>
                   </div>
-                )}
-              </div>
+                ))
+              )}
             </div>
           </div>
-        ))}
-
-        {loading && (
-          <div className="flex items-center gap-3">
-            <div className="grid h-8 w-8 place-items-center rounded-lg border border-os-border bg-os-bg2">
-              <Sparkles className="h-4 w-4 animate-spin text-os-accent" />
-            </div>
-            <div className="font-mono text-xs text-os-dim animate-pulse">Processing command & executing agent tools...</div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Command suggestion chips */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-os-border bg-os-bg/50 px-4 py-2">
-        <span className="font-mono text-[10px] uppercase tracking-wider text-os-dim">Shortcuts:</span>
-        {SUGGESTIONS.map((s, i) => (
-          <button
-            key={i}
-            onClick={() => handleSend(s.prompt)}
-            className="flex items-center gap-1 rounded-full border border-os-border bg-os-surface px-2.5 py-0.5 font-mono text-[10.5px] text-os-muted transition-colors hover:border-os-accent hover:text-os-accent"
-          >
-            <span>{s.label}</span>
-            <ArrowRight className="h-3 w-3" />
-          </button>
-        ))}
-      </div>
-
-      {/* Input bar */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSend();
-        }}
-        className="flex items-center gap-2 border-t border-os-border bg-os-bg p-3"
-      >
-        <input
-          type="text"
-          placeholder={
-            targetAgent === 'conductor'
-              ? 'Command Asteria OS... (e.g. "@sdr-agent find leads" or "check system health")'
-              : `Message ${agents.find((a) => a.id === targetAgent)?.name || targetAgent}...`
-          }
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={loading}
-          className="flex-1 rounded-lg border border-os-border bg-os-surface px-4 py-2.5 text-xs text-os-text outline-none focus:border-os-accent"
-          autoFocus
-        />
-        <button
-          type="submit"
-          disabled={loading || !input.trim()}
-          className="flex items-center gap-1.5 rounded-lg bg-os-accent px-4 py-2.5 font-mono text-xs font-bold text-os-accent-ink transition-opacity disabled:opacity-50 hover:opacity-90"
-        >
-          <span>Send</span>
-          <Send className="h-3.5 w-3.5" />
-        </button>
-      </form>
+        </div>
+      )}
     </div>
   );
 }
