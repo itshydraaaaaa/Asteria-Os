@@ -220,10 +220,85 @@ export function createLiteLlmProvider(model: string = LITELLM_MODEL): LlmProvide
   };
 }
 
+/**
+ * OmniRouter / OpenRouter provider -- routes directly through OpenRouter's free model pool
+ * with automated cascade failover across top free models:
+ * nvidia/nemotron-3.5-lightning:free -> inclusionai/ling-3.0-flash-vl:free -> liquid/lfm-2.5-2.6b:free -> openrouter/auto
+ */
+export const FREE_MODELS_CASCADE = [
+  'nvidia/nemotron-3.5-lightning:free',
+  'inclusionai/ling-3.0-flash-vl:free',
+  'liquid/lfm-2.5-2.6b:free',
+  'nex-agi/nex-n2.5-pro:free',
+  'openrouter/auto',
+];
+
+export function createOmniRouterProvider(defaultModel: string = 'nvidia/nemotron-3.5-lightning:free'): LlmProvider {
+  return {
+    name: 'omnirouter',
+    async chat(req) {
+      const apiKey =
+        process.env.OPENROUTER_API_KEY ||
+        resolveCred('OPENROUTER_API_KEY', [CRED_FILES.agentsEnv, CRED_FILES.socialMedia]);
+
+      if (!apiKey) {
+        throw new Error('OPENROUTER_API_KEY is not configured -- add it to .env.local for free OmniRouter models.');
+      }
+
+      const messages: { role: string; content: string }[] = [];
+      if (req.system) messages.push({ role: 'system', content: req.system });
+      for (const m of req.messages) {
+        if (m.role !== 'tool') messages.push({ role: m.role, content: m.content });
+      }
+
+      const modelsToTry = req.model ? [req.model, ...FREE_MODELS_CASCADE] : FREE_MODELS_CASCADE;
+      let lastError: Error | null = null;
+
+      for (const modelName of modelsToTry) {
+        try {
+          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+              'HTTP-Referer': 'https://asteria-os.vercel.app',
+              'X-Title': 'Asteria OS OmniRouter',
+            },
+            body: JSON.stringify({
+              model: modelName,
+              messages,
+            }),
+            signal: AbortSignal.timeout(20000),
+          });
+
+          if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error(`OpenRouter ${modelName} returned ${res.status}: ${errText}`);
+          }
+
+          const data = (await res.json()) as any;
+          const choice = data.choices?.[0]?.message;
+          const text = choice?.content ?? '';
+          if (text) {
+            return { text, toolCalls: [] };
+          }
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          // Continue to next free model in cascade
+        }
+      }
+
+      throw lastError || new Error('All free OmniRouter models failed to respond.');
+    },
+  };
+}
+
 export function getLlmProvider(): LlmProvider {
-  const name = process.env.LLM_PROVIDER ?? 'gateway';
+  const name = process.env.LLM_PROVIDER?.toLowerCase();
   if (name === 'stub') return stubLlmProvider;
+  if (name === 'omnirouter' || name === 'openrouter') return createOmniRouterProvider();
   if (name === 'litellm') return createLiteLlmProvider();
+  if (process.env.OPENROUTER_API_KEY) return createOmniRouterProvider();
   return createGatewayProvider();
 }
 
@@ -232,7 +307,7 @@ export function chat(req: LlmChatRequest): Promise<LlmChatResult> {
 }
 
 export async function llmStatus(): Promise<ConnectorStatus> {
-  const base = { id: 'llm', name: 'LLM (Gateway)', kind: 'orchestration' } as const;
+  const base = { id: 'llm', name: 'LLM (OmniRouter Free Tier)', kind: 'orchestration' } as const;
   if (process.env.LLM_PROVIDER === 'stub') {
     return { ...base, state: 'connected', detail: 'stub provider active (tests)' };
   }
@@ -244,12 +319,21 @@ export async function llmStatus(): Promise<ConnectorStatus> {
       detail: `LiteLLM proxy at ${LITELLM_BASE_URL} · model ${LITELLM_MODEL} · fallback: Google -> Groq -> OpenRouter`,
     };
   }
+  if (process.env.OPENROUTER_API_KEY || process.env.LLM_PROVIDER === 'omnirouter' || process.env.LLM_PROVIDER === 'openrouter') {
+    return {
+      ...base,
+      name: 'LLM (OmniRouter Free Tier)',
+      state: 'connected',
+      detail: 'OmniRouter Active · Cascade: NVIDIA Nemotron -> Ling 3.0 -> Liquid LFM -> OpenRouter Auto (100% Free Tier)',
+      meta: { models: FREE_MODELS_CASCADE },
+    };
+  }
   const key = resolveGatewayKey();
   if (!key) {
     return {
       ...base,
       state: 'not_configured',
-      detail: 'Set AI_GATEWAY_API_KEY in .env.local to enable agent chat via the Vercel AI Gateway.',
+      detail: 'Set OPENROUTER_API_KEY or AI_GATEWAY_API_KEY in .env.local to enable agent chat.',
     };
   }
   return { ...base, state: 'connected', detail: `Vercel AI Gateway · default model ${DEFAULT_MODEL}` };
