@@ -279,7 +279,9 @@ export function CommandChatView({
               <span>Loading persisted agent history...</span>
             </div>
           ) : (
-            messages.map((m) => (
+            messages
+              .filter((m) => m.sender !== 'tool')
+              .map((m) => (
               <div
                 key={m.id}
                 className={`flex items-start gap-3 ${m.sender === 'user' ? 'flex-row-reverse' : ''}`}
@@ -288,15 +290,11 @@ export function CommandChatView({
                   className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border font-mono text-xs ${
                     m.sender === 'user'
                       ? 'border-os-accent/30 bg-os-accent/10 text-os-accent'
-                      : m.sender === 'tool'
-                      ? 'border-blue-500/30 bg-blue-500/10 text-blue-400'
                       : 'border-os-border bg-os-surface2 text-os-text'
                   }`}
                 >
                   {m.sender === 'user' ? (
                     <User className="h-4 w-4" />
-                  ) : m.sender === 'tool' ? (
-                    <Wrench className="h-4 w-4" />
                   ) : (
                     <Bot className="h-4 w-4 text-os-accent" />
                   )}
@@ -305,7 +303,7 @@ export function CommandChatView({
                 <div className={`max-w-[85%] flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
                   <div className="mb-1 flex items-center gap-2 font-mono text-[10px] text-os-dim">
                     <span className="font-semibold text-os-muted">
-                      {m.sender === 'user' ? 'Operator' : m.sender === 'tool' ? 'System Tool Action' : m.agentName}
+                      {m.sender === 'user' ? 'Operator' : m.agentName}
                     </span>
                     {m.routedTo && (
                       <span className="rounded bg-os-accent/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-os-accent">
@@ -319,12 +317,14 @@ export function CommandChatView({
                     className={`rounded-xl px-4 py-3 text-xs leading-relaxed shadow-sm ${
                       m.sender === 'user'
                         ? 'bg-os-accent text-os-ink font-medium'
-                        : m.sender === 'tool'
-                        ? 'border border-blue-500/30 bg-blue-500/5 text-blue-200'
                         : 'border border-os-border bg-os-surface2 text-os-text'
                     }`}
                   >
-                    <div className="whitespace-pre-wrap">{m.text}</div>
+                    {m.sender === 'user' ? (
+                      <div className="whitespace-pre-wrap font-medium">{m.text}</div>
+                    ) : (
+                      <MarkdownContent text={m.text} />
+                    )}
 
                     {/* Tool Calls Execution Box */}
                     {m.toolCalls && m.toolCalls.length > 0 && (
@@ -515,4 +515,177 @@ export function CommandChatView({
       )}
     </div>
   );
+}
+
+function renderInline(str: string): React.ReactNode {
+  const parts = str.split(/(\*\*.*?\*\*|`.*?`)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={idx} className="font-bold text-os-text">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code key={idx} className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[11px] text-os-accent border border-os-border/50">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
+}
+
+function MarkdownContent({ text }: { text: string }) {
+  if (text.trim().startsWith('{') && text.includes('"tool"')) {
+    try {
+      const parsed = JSON.parse(text);
+      return (
+        <div className="rounded border border-blue-500/30 bg-blue-500/10 p-2 font-mono text-[11px] text-blue-300">
+          <span className="font-bold text-os-accent">⚡ Tool Invocation:</span> {parsed.tool || parsed.name}
+        </div>
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+  let tableRows: string[][] = [];
+  let inTable = false;
+  let inCodeBlock = false;
+  let codeBlockLines: string[] = [];
+
+  const flushTable = (key: string) => {
+    if (tableRows.length > 0) {
+      const header = tableRows[0];
+      const rows = tableRows.slice(1).filter((r) => !r.every((c) => c.includes('---')));
+      elements.push(
+        <div key={key} className="my-2.5 overflow-x-auto rounded border border-os-border bg-os-surface">
+          <table className="w-full text-left font-mono text-[11px]">
+            <thead className="border-b border-os-border bg-os-surface2/80 text-os-muted">
+              <tr>
+                {header.map((col, idx) => (
+                  <th key={idx} className="p-2 font-bold">{col.trim()}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-os-border/50">
+              {rows.map((row, rIdx) => (
+                <tr key={rIdx} className="hover:bg-os-surface2/30">
+                  {row.map((cell, cIdx) => (
+                    <td key={cIdx} className="p-2 text-os-text">{cell.trim()}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      tableRows = [];
+      inTable = false;
+    }
+  };
+
+  const flushCodeBlock = (key: string) => {
+    if (codeBlockLines.length > 0) {
+      elements.push(
+        <pre key={key} className="my-2 overflow-x-auto rounded border border-os-border bg-black/60 p-2.5 font-mono text-[11px] text-emerald-300 whitespace-pre-wrap">
+          {codeBlockLines.join('\n')}
+        </pre>
+      );
+      codeBlockLines = [];
+      inCodeBlock = false;
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.trim().startsWith('```')) {
+      if (inCodeBlock) {
+        flushCodeBlock(`code-${i}`);
+      } else {
+        if (inTable) flushTable(`table-${i}`);
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockLines.push(line);
+      continue;
+    }
+
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      inTable = true;
+      const cells = line.split('|').slice(1, -1);
+      tableRows.push(cells);
+      continue;
+    } else if (inTable) {
+      flushTable(`table-${i}`);
+    }
+
+    if (line.trim() === '---' || line.trim() === '***') {
+      elements.push(<hr key={`hr-${i}`} className="my-2.5 border-os-border" />);
+      continue;
+    }
+
+    if (line.startsWith('# ')) {
+      elements.push(<h2 key={i} className="mt-2.5 mb-1 text-sm font-bold text-os-text border-b border-os-border pb-1">{renderInline(line.slice(2))}</h2>);
+      continue;
+    }
+    if (line.startsWith('## ')) {
+      elements.push(<h3 key={i} className="mt-2 mb-1 text-xs font-bold text-os-accent">{renderInline(line.slice(3))}</h3>);
+      continue;
+    }
+    if (line.startsWith('### ')) {
+      elements.push(<h4 key={i} className="mt-1.5 mb-0.5 text-xs font-semibold text-os-text">{renderInline(line.slice(4))}</h4>);
+      continue;
+    }
+
+    if (line.startsWith('> ')) {
+      elements.push(
+        <blockquote key={i} className="my-1.5 border-l-2 border-os-accent bg-os-accent/5 px-3 py-1 text-xs italic text-os-muted">
+          {renderInline(line.slice(2))}
+        </blockquote>
+      );
+      continue;
+    }
+
+    if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+      elements.push(
+        <li key={i} className="ml-4 list-disc text-xs text-os-text leading-relaxed">
+          {renderInline(line.trim().slice(2))}
+        </li>
+      );
+      continue;
+    }
+
+    const numMatch = line.trim().match(/^(\d+)\.\s+(.*)$/);
+    if (numMatch) {
+      elements.push(
+        <div key={i} className="my-1 flex items-start gap-2 text-xs text-os-text leading-relaxed">
+          <span className="font-mono font-bold text-os-accent">{numMatch[1]}.</span>
+          <div>{renderInline(numMatch[2])}</div>
+        </div>
+      );
+      continue;
+    }
+
+    if (!line.trim()) {
+      elements.push(<div key={`space-${i}`} className="h-1" />);
+      continue;
+    }
+
+    elements.push(<p key={i} className="text-xs text-os-text leading-relaxed">{renderInline(line)}</p>);
+  }
+
+  if (inTable) flushTable('table-end');
+  if (inCodeBlock) flushCodeBlock('code-end');
+
+  return <div className="space-y-1">{elements}</div>;
 }

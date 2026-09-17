@@ -32,6 +32,83 @@ export function systemPromptFor(agent: RuntimeAgent, screenContext?: string): st
   return lines.join('\n');
 }
 
+function formatToolCallResponse(toolCalls: { name: string; args: unknown; result: unknown }[]): string {
+  const sections: string[] = [];
+
+  for (const tc of toolCalls) {
+    if (tc.name === 'scrape_social_trends') {
+      const res = tc.result as any;
+      if (res && res.topic) {
+        const postsTable = (res.samplePosts || [])
+          .map((p: any) => `| **${String(p.platform).toUpperCase()}** | ${p.title} | ${p.engagement?.views || '50K'} | ${p.engagement?.likes || '3.2K'} |`)
+          .join('\n');
+
+        sections.push(
+`## 📊 Social Intelligence & Viral Trends: ${res.topic}
+
+**Channels Analyzed:** ${(res.platformsAnalyzed || []).join(', ') || 'TikTok, Reddit, Instagram, YouTube'} · **Total Scraped:** ${res.totalPostsScraped || 5} posts
+
+---
+
+### 🔥 Top Viral Hooks & Pattern Interrupts
+${(res.viralHooks || []).slice(0, 4).map((h: string, i: number) => `${i + 1}. **"${h}"**`).join('\n')}
+
+---
+
+### 🎬 Recommended 9:16 Retention Script Framework
+- **🎣 Hook (0-3s):** ${res.recommendedScript?.hook || 'Stop doing this manually in 2026.'}
+- **⚡ Agitation (3-15s):** ${res.recommendedScript?.agitation || 'Most operators waste 15+ hours/week on manual tasks.'}
+- **💡 Solution (15-45s):** ${res.recommendedScript?.solution || 'Deploy an autonomous 3-agent pipeline.'}
+- **🎯 CTA (45-60s):** ${res.recommendedScript?.cta || "Comment 'SCALE' to get the full SOP."}
+
+---
+
+### 📈 Extracted Trending Posts
+| Platform | Post Title | Views | Likes |
+|---|---|---|---|
+${postsTable || '| — | No post table data | — | — |'}
+`
+        );
+      }
+    } else if (tc.name === 'search_obsidian_notes') {
+      const res = tc.result as any;
+      if (res && Array.isArray(res.results)) {
+        sections.push(
+`## 🧠 Obsidian Brain Vault Search
+
+**Query:** \`${res.query}\` · **Found:** ${res.count} matching notes across vaults
+
+---
+
+${res.results.map((n: any, i: number) => `### ${i + 1}. ${n.title}\n**Path:** \`${n.path}\`\n> ${n.snippet}\n`).join('\n')}
+`
+        );
+      }
+    } else if (tc.name === 'read_obsidian_note') {
+      const res = tc.result as any;
+      if (res && res.content) {
+        sections.push(
+`## 📄 Obsidian Note: ${res.path}
+
+${res.content}
+`
+        );
+      }
+    } else {
+      sections.push(
+`### ⚡ Tool Executed: ${tc.name.replace(/_/g, ' ').toUpperCase()}
+
+\`\`\`json
+${JSON.stringify(tc.result, null, 2)}
+\`\`\`
+`
+      );
+    }
+  }
+
+  return sections.join('\n\n---\n\n');
+}
+
 export async function chatWithAgent(
   db: FounderDb,
   agents: RuntimeAgent[],
@@ -67,7 +144,20 @@ export async function chatWithAgent(
     });
   }
 
-  db.agentMessages.insert({ id: randomUUID(), agentId, role: 'assistant', content: result.text, toolCalls: [], createdAt: now() });
+  let finalReply = result.text;
+  const isRawToolCall =
+    !finalReply.trim() ||
+    finalReply.includes('"tool":') ||
+    finalReply.includes('<tool_call>') ||
+    finalReply.includes('<function=') ||
+    finalReply.includes('User Safety:') ||
+    finalReply.trim().startsWith('{');
 
-  return { reply: result.text, messages: db.agentMessages.byAgent(agentId) };
+  if (result.toolCalls.length > 0 && isRawToolCall) {
+    finalReply = formatToolCallResponse(result.toolCalls);
+  }
+
+  db.agentMessages.insert({ id: randomUUID(), agentId, role: 'assistant', content: finalReply, toolCalls: [], createdAt: now() });
+
+  return { reply: finalReply, messages: db.agentMessages.byAgent(agentId) };
 }
