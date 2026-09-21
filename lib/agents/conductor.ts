@@ -24,7 +24,24 @@ function slug(s: string): string {
 
 function matchAgent(agents: RuntimeAgent[], token: string): RuntimeAgent | undefined {
   const t = slug(token);
-  return agents.find((a) => a.id === token || a.id === t || slug(a.name) === t);
+  const direct = agents.find((a) => a.id === token || a.id === t || slug(a.name) === t);
+  if (direct) return direct;
+
+  const aliases: Record<string, string> = {
+    'sdr-agent': 'sales-agent',
+    sdr: 'sales-agent',
+    sales: 'sales-agent',
+    marketing: 'social-agent',
+    content: 'social-agent',
+    dev: 'tech-lead',
+    developer: 'tech-lead',
+  };
+
+  const aliasTarget = aliases[t];
+  if (aliasTarget) {
+    return agents.find((a) => a.id === aliasTarget);
+  }
+  return undefined;
 }
 
 /** Ask the model for the single best-fit agent id; fall back to the first agent. */

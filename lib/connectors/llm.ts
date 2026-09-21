@@ -307,29 +307,67 @@ export function createOmniRouterProvider(defaultModel: string = 'google/gemma-4-
 
           // 2. Check JSON or XML tool call format in text
           if (req.tools && toolCalls.length === 0) {
-            // Check XML tool_call tag: <function=name><parameter=k>v</parameter>
+            // Check for multiple <tool_call> tags
             if (text.includes('<tool_call>') || text.includes('<function=')) {
-              try {
-                const fnMatch = text.match(/<function=([^>]+)>/i);
-                if (fnMatch) {
-                  const toolName = fnMatch[1].trim();
-                  const args: Record<string, unknown> = {};
-                  const paramMatches = [...text.matchAll(/<parameter=([^>]+)>([\s\S]*?)<\/parameter>/gi)];
-                  for (const pm of paramMatches) {
-                    args[pm[1].trim()] = pm[2].trim();
+              const toolCallBlocks = [...text.matchAll(/<tool_call>([\s\S]*?)<\/tool_call>/gi)].map((m) => m[1]);
+              const rawBlocks = toolCallBlocks.length > 0 ? toolCallBlocks : [text];
+
+              for (const block of rawBlocks) {
+                try {
+                  // Format A: <function=name><parameter=k>v</parameter>
+                  const fnMatch = block.match(/<function=([^>]+)>/i);
+                  if (fnMatch) {
+                    const toolName = fnMatch[1].trim();
+                    const args: Record<string, unknown> = {};
+                    const paramMatches = [...block.matchAll(/<parameter=([^>]+)>([\s\S]*?)<\/parameter>/gi)];
+                    for (const pm of paramMatches) {
+                      args[pm[1].trim()] = pm[2].trim();
+                    }
+                    const spec = req.tools.find((t) => t.name === toolName);
+                    if (spec) {
+                      const result = await spec.execute(args);
+                      toolCalls.push({ name: spec.name, args, result });
+                    }
+                    continue;
                   }
-                  const spec = req.tools.find((t) => t.name === toolName);
-                  if (spec) {
-                    const result = await spec.execute(args);
-                    toolCalls.push({ name: spec.name, args, result });
+
+                  // Format B: tool_name<arg_key>key</arg_key><arg_value>val</arg_value>
+                  const toolNameMatch = block.match(/^\s*([a-zA-Z0-9_-]+)/);
+                  if (toolNameMatch) {
+                    const toolName = toolNameMatch[1].trim();
+                    const spec = req.tools.find((t) => t.name === toolName);
+                    if (spec) {
+                      const args: Record<string, unknown> = {};
+                      const keys = [...block.matchAll(/<arg_key>([\s\S]*?)<\/arg_key>/gi)].map((m) => m[1].trim());
+                      const values = [...block.matchAll(/<arg_value>([\s\S]*?)<\/arg_value>/gi)].map((m) => m[1].trim());
+                      for (let kIdx = 0; kIdx < Math.min(keys.length, values.length); kIdx++) {
+                        args[keys[kIdx]] = values[kIdx];
+                      }
+                      const result = await spec.execute(args);
+                      toolCalls.push({ name: spec.name, args, result });
+                      continue;
+                    }
                   }
+
+                  // Format C: JSON inside <tool_call>
+                  const jsonInBlock = block.match(/\{[\s\S]*\}/);
+                  if (jsonInBlock) {
+                    const parsed = JSON.parse(jsonInBlock[0]);
+                    const toolName = parsed.tool || parsed.name;
+                    const toolArgs = parsed.arguments || parsed.args || parsed.parameters || {};
+                    const spec = req.tools.find((t) => t.name === toolName);
+                    if (spec) {
+                      const result = await spec.execute(toolArgs);
+                      toolCalls.push({ name: spec.name, args: toolArgs, result });
+                    }
+                  }
+                } catch {
+                  // Continue to next block
                 }
-              } catch {
-                // Non-blocking
               }
             }
 
-            // Check JSON tool call format: {"tool": "name", "arguments": {...}}
+            // Check standalone JSON tool call format: {"tool": "name", "arguments": {...}}
             if (toolCalls.length === 0 && (text.includes('"tool"') || (text.includes('"name"') && text.includes('"arguments"')))) {
               try {
                 const jsonMatch = text.match(/\{[\s\S]*\}/);
