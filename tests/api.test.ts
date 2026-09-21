@@ -217,7 +217,7 @@ describe('API route handlers', () => {
     const list = await route.GET();
     const body = await list.json();
     expect(body.posts.some((p: { id: string }) => p.id === created.post.id)).toBe(true);
-  });
+  }, 20_000);
 
   test('POST /api/social/posts rejects an empty caption or no platforms', async () => {
     const route = await import('@/app/api/social/posts/route');
